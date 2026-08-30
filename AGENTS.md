@@ -1,7 +1,7 @@
 # Working on the hardware
 
 Not started as a repository (2026-08-30); the manifold exists physically and nowhere else. Read
-the umbrella's [AGENTS.md](https://github.com/plantbutler/plantbutler/blob/main/AGENTS.md) and
+the umbrella's [AGENTS.md](https://github.com/plantbutler/plantbutler/blob/main/AGENTS.md) (on this machine: `~/projects/plant-butler/AGENTS.md`) and
 [DECISIONS.md](https://github.com/plantbutler/plantbutler/blob/main/DECISIONS.md) first; decision
 #7 (safety) is the one this repository has to make physically true.
 
