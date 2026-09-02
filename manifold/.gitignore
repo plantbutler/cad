@@ -1,0 +1,3 @@
+# build products: make stl / make check write here; renders/ is committed
+build/
+build/**/*.stl

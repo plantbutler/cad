@@ -1,39 +1,56 @@
 # Working on the hardware
 
-Not started as a repository (2026-08-30); the manifold exists physically and nowhere else. Read
-the umbrella's [AGENTS.md](https://github.com/plantbutler/plantbutler/blob/main/AGENTS.md) (on this machine: `~/projects/plant-butler/AGENTS.md`) and
+Read the umbrella's [AGENTS.md](https://github.com/plantbutler/plantbutler/blob/main/AGENTS.md)
+(on this machine: `~/projects/plant-butler/AGENTS.md`) and
 [DECISIONS.md](https://github.com/plantbutler/plantbutler/blob/main/DECISIONS.md) first; decision
-#7 (safety) is the one this repository has to make physically true.
+#7 (safety) is the one this repository has to make physically true, #8 says why everything here
+is OpenSCAD.
 
-## What goes here
+## What is here (2026-09-02)
 
-OpenSCAD sources (and the STLs they came from, if a part was printed from a file you only have as
-STL), a KiCad schematic of the wiring, the bill of materials, and bench notes with the numbers
-measured. Installed on the Mac: OpenSCAD 2021.01, KiCad, FreeCAD (do not use it here),
-BambuStudio and Cura.
+- `manifold/` — the watering manifold, parametric OpenSCAD 2021.01: `params.scad` (every
+  parameter and every derived number, guarded by asserts), `lib/` (shapes, barb, O-ring,
+  involute gear), `parts/` (ten printed parts), `assembly.scad` (everything in place with
+  ghosts of the hardware, six section views), `Makefile` (`make stl png check report`),
+  `README.md` (the parameters, the gate derivation, what to measure on the bench, assembly and
+  sealing, print orientations), `renders/`, `reference/valveV2.{FCStd,step}` (the FreeCAD
+  design it reproduces; read-only). Start with the README.
+- Nothing else yet: the KiCad schematic, the BOM, the sensor stakes and `bench-notes.md` come
+  with their pitches.
 
-The hardware today: one reservoir and pump (never yet driven from software), a
-continuous-rotation SG90 driving a lead screw through reduction gears, a cart with a magnet that
-rides the screw over five gates (valveV2 in FreeCAD, nail poppets to become 8 mm balls on
-o-ring seats), one hose per pot, one
-uncoated capacitive soil sensor per pot on the board's analog pins. Expect it to evolve; the
-solenoid-valve alternative is a note in the plan.
+Installed on the Mac: OpenSCAD 2021.01 at `/Applications/OpenSCAD-2021.01.app/Contents/MacOS/OpenSCAD`
+(the Makefile's default), KiCad, FreeCAD 1.1 (only to read `reference/`; `freecadcmd` scripts
+can dump geometry headless), BambuStudio and Cura. The printer is a Bambu Lab P2S, 0.4 nozzle.
+
+## How to work on the CAD
+
+- Every dimension is an expression of `params.scad`; a number typed in a part file is a bug
+  unless it is an epsilon or 45°. New behaviour = new parameter with a comment saying why.
+- Each part file has `<part>()` in the assembly frame (X across, Y up, Z along, servo end at
+  −Z), `<part>_print()` flat on z = 0 for export, `<part>_size()`, and the
+  `if (is_undef(ASSEMBLY))` guard. `-D for_print=true` exports it; `-D name=value` overrides a
+  parameter on a part file (not on the assembly: it `use`s the parts, `make check` copies the
+  tree instead).
+- Before saying a change is done: `make check` (defaults and the alternate parameter sets),
+  `make stl` (every part one solid: `Simple: yes`, `Volumes: 2`), `make png`, and LOOK at the
+  renders, sections included. A part must print with one flat face on the bed and no supports.
+- The mechanism is decided (lead screw, magnet cart, 8 mm 440C ball on an O-ring seat, gears
+  outboard of the servo plate, bonded lid and caps): re-source it, do not redesign it. What the
+  bench must measure before the numbers are trusted is in `manifold/README.md`.
 
 ## Pitches, in order (titles in the plan)
 
-1. **Bench rig** — pump, a driver that is off unless the MCU asserts it, the pump's own supply
+1. **Manifold in OpenSCAD with ball gates** — this directory; in progress.
+2. **Bench rig** — pump, a driver that is off unless the MCU asserts it, the pump's own supply
    with a common ground, a one-litre reservoir and a float switch, driven from a serial command.
    Deliverables: ml/s per output; verdicts on whether the manifold seals, its head, the servo's
-   torque and whether the threadless start of the screw holds as home; the KiCad schematic; the BOM. The servo and the
-   pump never draw from the board's 5 V pin.
-2. **Sensor stakes and sealing** — seal the sensor edges, print stakes that fix each sensor's
+   torque and whether the threadless start of the screw holds as home; the KiCad schematic; the
+   BOM. The servo and the pump never draw from the board's 5 V pin.
+3. **Sensor stakes and sealing** — seal the sensor edges, print stakes that fix each sensor's
    depth, before the NAS starts storing history that matters.
-3. **Manifold and mounts in OpenSCAD** — only after "Manifold that knows where it is" (firmware)
-   has said whether the mechanism or the indexing is the problem. Parametric only where a
-   dimension is known to change.
 
-Not in scope: a PCB, a flow meter, an enclosure, a redesign of the mechanism, positional-servo
-or stepper conversions.
+Not in scope: a PCB, a flow meter, an enclosure, positional-servo or stepper conversions, the
+solenoid-valve alternative (a note in the plan).
 
 ## Bench rules
 
