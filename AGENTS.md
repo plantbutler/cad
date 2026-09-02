@@ -13,7 +13,9 @@ measured. Installed on the Mac: OpenSCAD 2021.01, KiCad, FreeCAD (do not use it 
 BambuStudio and Cura.
 
 The hardware today: one reservoir and pump (never yet driven from software), a
-continuous-rotation servo turning a rotary manifold with five outputs, one hose per pot, one
+continuous-rotation SG90 driving a lead screw through reduction gears, a cart with a magnet that
+rides the screw over five gates (valveV2 in FreeCAD, nail poppets to become 8 mm balls on
+o-ring seats), one hose per pot, one
 uncoated capacitive soil sensor per pot on the board's analog pins. Expect it to evolve; the
 solenoid-valve alternative is a note in the plan.
 
@@ -22,7 +24,7 @@ solenoid-valve alternative is a note in the plan.
 1. **Bench rig** — pump, a driver that is off unless the MCU asserts it, the pump's own supply
    with a common ground, a one-litre reservoir and a float switch, driven from a serial command.
    Deliverables: ml/s per output; verdicts on whether the manifold seals, its head, the servo's
-   torque and whether the rotor has a hard stop; the KiCad schematic; the BOM. The servo and the
+   torque and whether the threadless start of the screw holds as home; the KiCad schematic; the BOM. The servo and the
    pump never draw from the board's 5 V pin.
 2. **Sensor stakes and sealing** — seal the sensor edges, print stakes that fix each sensor's
    depth, before the NAS starts storing history that matters.
