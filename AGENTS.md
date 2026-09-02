@@ -15,8 +15,13 @@ is OpenSCAD.
   `README.md` (the parameters, the gate derivation, what to measure on the bench, assembly and
   sealing, print orientations), `renders/`, `reference/valveV2.{FCStd,step}` (the FreeCAD
   design it reproduces; read-only). Start with the README.
+- `wiring/` — the bench wiring: `nets.py` (every wire and every table: the one source of
+  truth), `style.py`, four `draw_*.py` (overview, pump driver and interlock, sensor bus, power)
+  rendered by `draw.py` to SVG and PNG, `gen_readme.py` which writes `README.md` from `nets.py`,
+  and a `Makefile` (`make`, `drawings`, `readme`, `clean`). Change a fact in `nets.py`, never in
+  the generated README. Needs `uv` (it fetches schemdraw and matplotlib).
 - Nothing else yet: the KiCad schematic, the BOM, the sensor stakes and `bench-notes.md` come
-  with their pitches.
+  with their pitches. KiCad comes after the bench has fixed the part choices.
 
 Installed on the Mac: OpenSCAD 2021.01 at `/Applications/OpenSCAD-2021.01.app/Contents/MacOS/OpenSCAD`
 (the Makefile's default), KiCad, FreeCAD 1.1 (only to read `reference/`; `freecadcmd` scripts
@@ -40,13 +45,15 @@ can dump geometry headless), BambuStudio and Cura. The printer is a Bambu Lab P2
 
 ## Pitches, in order (titles in the plan)
 
-1. **Manifold in OpenSCAD with ball gates** — this directory; in progress.
-2. **Bench rig** — pump, a driver that is off unless the MCU asserts it, the pump's own supply
+1. **Manifold in OpenSCAD with ball gates** — `manifold/`, done.
+2. **Bench wiring drawings** — `wiring/`, done: the pin map, the interlock, the power scheme
+   and the bring-up order that the bench rig follows.
+3. **Bench rig** — pump, a driver that is off unless the MCU asserts it, the pump's own supply
    with a common ground, a one-litre reservoir and a float switch, driven from a serial command.
    Deliverables: ml/s per output; verdicts on whether the manifold seals, its head, the servo's
    torque and whether the threadless start of the screw holds as home; the KiCad schematic; the
    BOM. The servo and the pump never draw from the board's 5 V pin.
-3. **Sensor stakes and sealing** — seal the sensor edges, print stakes that fix each sensor's
+4. **Sensor stakes and sealing** — seal the sensor edges, print stakes that fix each sensor's
    depth, before the NAS starts storing history that matters.
 
 Not in scope: a PCB, a flow meter, an enclosure, positional-servo or stepper conversions, the
