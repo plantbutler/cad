@@ -46,6 +46,8 @@ MODULES: dict[str, tuple[str, str]] = {
     "MOIST5": ("moisture 5 (capacitive)", "in hand"),
     "LDR": ("Sensor Kit light (LDR)", "in hand"),
     "DHT": ("Sensor Kit temp/humidity (DHT11)", "in hand"),
+    "OLED": ("Sensor Kit OLED SSD1306 0x3C", "in hand"),
+    "LCD": ("LCD1602 + PCF8574 backpack 0x27", "in hand"),
     "SERVO": ("SG90 continuous servo", "in hand"),
     "HALL_SCREW": ("WPSE313 hall: screw pulse", "in hand"),
     "HALL_HOME": ("WPSE313 hall: home", "in hand"),
@@ -97,7 +99,7 @@ class Wire:
         return (self.to, self.to_pin) if self.frm == mid else (self.frm, self.frm_pin)
 
 
-_I2C_PULL = "10 k pull-up on the module (VERIFY; else 4.7 k to 5V_BOARD)"
+_I2C_PULL = "ONE set of pull-ups for the whole bus: 4.7 k to 5V_BOARD (VERIFY each module; remove the rest)"
 _HALL_CONN = "3-pin S / + (middle) / -"
 _HALL_PULL = "10 k pull-up to 5V_BOARD at the breadboard"
 _PH = "JST-PH 2.0 3-pin (VCC, GND, AOUT)"
@@ -106,7 +108,8 @@ _GROVE = "Grove 4-pin (VCC, GND, SIG, NC)"
 WIRES: list[Wire] = [
     # -- UNO pins ------------------------------------------------------------
     Wire("UNO", "D2", "FLOW", "yellow (pulse)", "SIGNAL", "FLOW",
-         via="1 k series at the board", connector="3-wire lead red / black / yellow",
+         via="1 k series at the board, 10 k pull-up to 5V_BOARD (R4)",
+         connector="3-wire lead red / black / yellow",
          cable="<= 1 m; away from the servo lead; interrupt pin: pulses are counted, never muxed"),
     Wire("UNO", "D3", "HALL_SCREW", "S", "SIGNAL", "HALL_SCREW",
          via=_HALL_PULL, connector=_HALL_CONN,
@@ -131,6 +134,11 @@ WIRES: list[Wire] = [
          connector="header / Dupont", cable="<= 20 cm"),
     Wire("UNO", "A5", "PCF8575", "SCL", "I2C", "SCL", via=_I2C_PULL,
          connector="header / Dupont", cable="<= 20 cm"),
+    Wire("UNO", "A4/A5", "OLED", "SDA / SCL", "I2C", "SDA + SCL", via=_I2C_PULL, connector=_GROVE,
+         cable="Grove 20-50 cm; the same two wires as the expander: A4/A5 are a bus, not a pin each"),
+    Wire("UNO", "A4/A5", "LCD", "SDA / SCL", "I2C", "SDA + SCL", via=_I2C_PULL,
+         connector="header / Dupont",
+         cable="<= 30 cm; shares the bus with the expander and the OLED"),
     Wire("UNO", "5V", "RAIL5V", "+", "5V_BOARD", "5V_BOARD",
          connector="header / Dupont",
          cable="<= 20 cm; OUTPUT only, never fed. The board's buck gives 1.2 A total from VIN: see POWER_BUDGET"),
@@ -149,6 +157,9 @@ WIRES: list[Wire] = [
          cable="5V_BOARD ONLY, never 12 V: the pulses swing to the supply"),
     Wire("RAIL5V", "+", "DHT", "VCC", "5V_BOARD", "5V_BOARD", connector=_GROVE),
     Wire("RAIL5V", "+", "LDR", "VCC", "5V_BOARD", "5V_BOARD", connector=_GROVE),
+    Wire("RAIL5V", "+", "OLED", "VCC", "5V_BOARD", "5V_BOARD", connector=_GROVE),
+    Wire("RAIL5V", "+", "LCD", "VCC", "5V_BOARD", "5V_BOARD", connector="Dupont",
+         cable="the backlight is most of the ~60 mA the two screens draw"),
     *[Wire("RAIL5V", "+", f"MOIST{i}", "VCC", "5V_BOARD", "5V_BOARD", connector=_PH,
            cable="lead + extension <= 1.5 m") for i in range(1, 6)],
     Wire("RAIL5V", "+", "RELAY", "VCC", "5V_BOARD", "5V_BOARD", connector="Dupont",
@@ -167,6 +178,8 @@ WIRES: list[Wire] = [
     Wire("RAILGND", "-", "FLOW", "black", "GND", "GND"),
     Wire("RAILGND", "-", "DHT", "GND", "GND", "GND", connector=_GROVE),
     Wire("RAILGND", "-", "LDR", "GND", "GND", "GND", connector=_GROVE),
+    Wire("RAILGND", "-", "OLED", "GND", "GND", "GND", connector=_GROVE),
+    Wire("RAILGND", "-", "LCD", "GND", "GND", "GND", connector="Dupont"),
     *[Wire("RAILGND", "-", f"MOIST{i}", "GND", "GND", "GND", connector=_PH) for i in range(1, 6)],
     Wire("RAILGND", "-", "RELAY", "GND", "GND", "GND", connector="Dupont", cable="coil return"),
     Wire("SERVO", "brown", "STAR", "GND", "GND", "GND", connector="JR 3-pin",
@@ -234,7 +247,8 @@ MANIFOLD_NOTE = (
 
 def pin_map() -> list[Wire]:
     """The wires that land on a UNO pin, in board-pin order (bench first, later last)."""
-    order = ["D2", "D3", "D5", "D6", "D7", "D9", "A0", "A1", "A4", "A5", "5V", "GND", "VIN (barrel)"]
+    order = ["D2", "D3", "D5", "D6", "D7", "D9", "A0", "A1", "A4", "A5", "A4/A5",
+             "5V", "GND", "VIN (barrel)"]
     rows = [w for w in WIRES if w.board_pin]
     return sorted(rows, key=lambda w: (w.later, order.index(w.board_pin)))
 
@@ -278,12 +292,24 @@ EXPANDER_NOTES = [
 
 I2C_ADDRESSES: list[dict[str, str]] = [
     {"address": "0x20", "device": "PCF8575 expander", "note": "A0-A2 low; Wire (A4/A5, 5 V)"},
+    {"address": "0x21-0x26", "device": "more PCF8575", "note": "later manifolds; 0x27 is the LCD backpack, not a spare"},
+    {"address": "0x27", "device": "LCD1602 I2C backpack", "note": "PCF8574; VERIFY (some backpacks ship at 0x3F)"},
     {"address": "0x38", "device": "DHT20 temp/humidity", "note": "only if the kit has the DHT20 (Environment_I2C)"},
-    {"address": "0x21-0x27", "device": "more PCF8575", "note": "later manifolds"},
+    {"address": "0x3C", "device": "SSD1306 OLED 128x64 (u8x8)", "note": "Sensor Kit"},
 ]
 I2C_NOTES = [
-    "Wire on A4/A5 is 5 V with NO on-board pull-ups: the PCF8575 module's 10 k pull-ups serve (VERIFY, else 4.7 k to 5V_BOARD).",
+    "Wire on A4/A5 is 5 V with NO on-board pull-ups: the bus needs exactly one set, 4.7 k to 5V_BOARD.",
+    "THREE modules sit on this bus now (expander, OLED, LCD backpack) over roughly 1.3 m of cable, and all "
+    "three commonly ship their own pull-ups. VERIFY each module and keep ONE set fitted: three 10 k sets in "
+    "parallel land near 3.3 k, which eats the 3 mA a device may sink; a single 10 k over a run this long is "
+    "marginal for the 100 kHz rise time. One 4.7 k pair, on one module, and remove or leave off the rest.",
     "The Qwiic connector is Wire1 at 3.3 V: not for these modules.",
+    "Both screens sit on the same two wires as the expander that carries the mux select lines and the "
+    "home hall. The bus that paints a screen is the bus that reads the cart's position, so neither "
+    "screen is painted while D6 is asserted.",
+    "Grep any library added to this bus for Wire.flush(): TwoWire::flush() (Wire.cpp:833) spins on "
+    "bus_status with no timeout and no iteration bound, so one wedged transaction never returns and "
+    "the watchdog is what ends the dose.",
 ]
 
 # ---------------------------------------------------------------- perfboard
@@ -307,8 +333,17 @@ RELAY_TERMINALS: list[dict[str, str]] = [
 RELAY_NOTES = [
     "READ THE MODULE before the first power-up: active-HIGH or active-LOW input, coil current, contact "
     "rating, and whether a JD-VCC jumper separates the coil supply from VCC.",
-    "In the sketch, set the level BEFORE the direction: digitalWrite(D6, <OFF level>); pinMode(D6, OUTPUT). "
-    "The other order glitches the pin to the ON level at boot and kicks the pump.",
+    "In the sketch, ONE PFS write carries direction and level together: R_IOPORT_PinCfg(NULL, "
+    "g_pin_cfg[D6].pin, IOPORT_CFG_PORT_DIRECTION_OUTPUT | (OFF level is HIGH ? "
+    "IOPORT_CFG_PORT_OUTPUT_HIGH : 0)). Never call pinMode on D6: on this core it would drive the pin "
+    "LOW and discard the level you just set.",
+    "Why, on this silicon: pinMode(pin, OUTPUT) is R_IOPORT_PinCfg(..., "
+    "IOPORT_CFG_PORT_DIRECTION_OUTPUT) (cores/arduino/digital.cpp:12-14), which bottoms out in an "
+    "unconditional whole-register write, PmnPFS = cfg (bsp_io.h:391-395). cfg is 0x4, and the level "
+    "bit IOPORT_CFG_PORT_OUTPUT_HIGH is 0x1 (r_ioport_api.h:186) - a bit pinMode never sets. So "
+    "pinMode(D6, OUTPUT) latches PODR = 0 and drives D6 LOW, discarding a preceding digitalWrite. On "
+    "an active-LOW module the old level-then-direction recipe therefore asserted the pump at every "
+    "boot, watchdog resets included.",
     "R1 (10 k) holds the OFF level while D6 is an input: at reset, during boot, and with the jumper pulled.",
     "NO, never NC: a de-energised coil must leave the pump unpowered.",
     "Never PWM the contacts. ~10^5 mechanical cycles is decades at a few doses a day; a switched-on-and-off "
@@ -317,12 +352,15 @@ RELAY_NOTES = [
 ]
 
 INTERLOCK_PARTS: list[dict[str, str]] = [
-    {"ref": "F1", "value": "T 3 A slow-blow, 5x20", "role": "pump branch, + leg only; value fixed after bring-up 7f"},
+    {"ref": "F1", "value": "T 3 A slow-blow, 5x20", "role": "pump branch, + leg only; value fixed after bring-up 7d"},
     {"ref": "F2", "value": "1 A, 5x20", "role": "UNO VIN, + leg only"},
     {"ref": "K1", "value": "1-channel relay module, 5 V coil", "role": "switches the 12 V + leg: COM from F1, NO to pump +"},
     {"ref": "R1", "value": "10 k", "role": "D6 to the module's OFF level: pull-down if active-HIGH, pull-up if active-LOW"},
     {"ref": "R2", "value": "10 k", "role": "float hall S pull-up to 5V_BOARD: unplugged or dead = the 'not OK' level"},
     {"ref": "R3", "value": "10 k", "role": "home hall S pull-up to 5V_BOARD (expander P4)"},
+    {"ref": "R4", "value": "10 k", "role": "flow-meter pulse pull-up to 5V_BOARD (D2), behind the 1 k series: "
+                                           "an unplugged meter must read a firm level, not oscillate - a floating "
+                                           "counted-pulse input is indistinguishable from flow"},
     {"ref": "C1", "value": "470-1000 uF electrolytic", "role": "across the servo's 5 V / GND AT THE PLUG"},
     {"ref": "C2", "value": "100 nF", "role": "beside C1, and one across each of the mux and the expander"},
 ]
@@ -339,6 +377,9 @@ TRUTH_TABLE: list[dict[str, str]] = [
      "pump": "off", "held_by": "FIRMWARE"},
     {"case": "float hall unplugged, GND lead off, or dead", "d6": "firmware drops it",
      "float": "reads 'not OK' (R2)", "pump": "off", "held_by": "FIRMWARE, on a hardware sense path"},
+    {"case": "float says OK, the meter sees nothing", "d6": "firmware drops it",
+     "float": "reads OK, and is not believed", "pump": "off, and every later dose refused",
+     "held_by": "FIRMWARE: the contradiction latch, until `clear contra`"},
     {"case": "MCU in reset / boot / D6 not yet OUTPUT / jumper pulled", "d6": "input -> OFF level (R1)",
      "float": "any", "pump": "off", "held_by": "hardware"},
     {"case": "board 5 V absent (USB out, board dead)", "d6": "-", "float": "any",
@@ -348,7 +389,8 @@ TRUTH_TABLE: list[dict[str, str]] = [
     {"case": "I2C hung, home hall unreadable", "d6": "firmware drops it", "float": "any",
      "pump": "off", "held_by": "FIRMWARE: unknown position must refuse"},
     {"case": "firmware hung with D6 already asserted", "d6": "stuck asserted", "float": "any",
-     "pump": "RUNS until the IWDT resets the board", "held_by": "WATCHDOG (see the gap below)"},
+     "pump": "RUNS until the watchdog resets the board",
+     "held_by": "WATCHDOG: the WDT, register-started (firmware spec 2.5). See the gap below"},
     {"case": "firmware hung and the watchdog off", "d6": "stuck asserted", "float": "any",
      "pump": "RUNS until someone pulls the plug", "held_by": "nothing"},
 ]
@@ -358,9 +400,16 @@ INTERLOCK_NOTES = [
     "gate pull-down to manage it.",
     "THE GAP: there is no longer a hardware AND between 'firmware says pump' and 'the tank has water'. A "
     "sketch that hangs with D6 already asserted keeps the pump running. Three things bound it, and all "
-    "three are firmware: the RA4M1 IWDT enabled (a hang resets the board, D6 reverts to an input, R1 "
-    "opens the relay), a hard maximum run time in the same code path that asserts D6, and a no-flow "
-    "abort from the flow meter. Write all three or none of this holds.",
+    "three are firmware: the RA4M1 watchdog enabled (a hang resets the board, D6 reverts to an input, "
+    "R1 opens the relay), a hard maximum run time in the same code path that asserts D6, and a "
+    "no-flow abort from the flow meter. Write all three or none of this holds.",
+    "The watchdog that is written is the WDT, register-started and PCLKB-clocked, not the IWDT that "
+    "DECISIONS #10 names: the IWDT auto-starts from OFS0 option bytes the Arduino core does not "
+    "expose, and a wrong one locks the board out of uploads. Firmware spec 2.5 has the granted "
+    "window; status prints it.",
+    "A fifth case the hardware cannot see: the float grants permission and the meter counts nothing. "
+    "The two sensors contradict each other, the safe reading is a stuck float over an empty tank, and "
+    "the firmware latches - every later dose refused until someone types `clear contra`.",
     "The float is mounted so that ALLOW is the active state (magnet present). Every sensor failure - an "
     "open line, a dead hall, an unplugged connector, a lost 5 V - therefore reads as refuse, never as "
     "permission.",
@@ -414,7 +463,7 @@ FLOAT_NOTES = [
 # ---------------------------------------------------------------- power
 POWER_BUDGET: list[dict[str, str]] = [
     {"rail": "12V", "consumer": "pump (via F1)", "current": "<= 1.5 A running, 3-5x inrush",
-     "note": "ASSUME: read the label, measure in 7f"},
+     "note": "ASSUME: read the label, measure in 7d"},
     {"rail": "12V", "consumer": "UNO VIN (via F2)", "current": "~0.5 A at servo stall",
      "note": "the board and everything on 5V_BOARD, through the on-board buck"},
     {"rail": "5V_BOARD", "consumer": "5x moisture", "current": "~25 mA", "note": ""},
@@ -422,10 +471,12 @@ POWER_BUDGET: list[dict[str, str]] = [
     {"rail": "5V_BOARD", "consumer": "flow meter", "current": "~15 mA", "note": "never from 12 V"},
     {"rail": "5V_BOARD", "consumer": "MUX, PCF8575, DHT11, LDR", "current": "< 10 mA", "note": "and the pull-ups"},
     {"rail": "5V_BOARD", "consumer": "relay coil", "current": "~80 mA", "note": "VERIFY on the module"},
+    {"rail": "5V_BOARD", "consumer": "two I2C screens", "current": "~60 mA",
+     "note": "OLED 0x3C + LCD 0x27; the LCD backlight is most of it"},
     {"rail": "5V_BOARD", "consumer": "SG90 continuous", "current": "~250 mA run, ~650 mA stall",
      "note": "its own pair from the rail, C1 470-1000 uF at the plug"},
-    {"rail": "5V_BOARD", "consumer": "total", "current": "~410 mA running, ~810 mA at servo stall",
-     "note": "the stall is a transient; C1 carries it"},
+    {"rail": "5V_BOARD", "consumer": "total", "current": "~470 mA running, ~870 mA at servo stall",
+     "note": "both figures are inside the ceiling below; the stall is a transient, and C1 carries it"},
     {"rail": "5V_BOARD", "consumer": "ceiling", "current": "~1.05 A",
      "note": "1.2 A buck total, less the board's ~150 mA"},
 ]
@@ -446,10 +497,11 @@ NEVER = [
     "Breadboard or Dupont in the 12 V loop: never (screw terminals, >= 0.5 mm2).",
 ]
 BENCH_POWER_ALT = (
-    "USB may power the board for the sensor-only steps (bring-up 1-3). From step 4 on, the barrel jack "
-    "carries VIN from the 12 V brick: the servo's stall and the relay coil are more than a USB port "
-    "will give, and a brown-out mid-dose is the one failure this rig should not have. Grounds common "
-    "at the star either way.")
+    "USB may power the board through bring-up step 5: the sensors and the relay coil are inside a "
+    "500 mA port. From step 6 on - the step that moves the servo - the barrel jack carries VIN from the "
+    "12 V brick, and it stays there for 7a-7e and the unattended run: the servo's stall is more than a "
+    "USB port will give, and a brown-out mid-dose is the one failure this rig should not have. Grounds "
+    "common at the star either way.")
 
 # ---------------------------------------------------------------- hydraulics
 HYDRAULIC_CHAIN: list[dict[str, str]] = [
@@ -466,7 +518,7 @@ HYDRAULIC_CHAIN: list[dict[str, str]] = [
 PARTS: list[dict[str, str]] = [
     {"part": "Arduino UNO R4 WiFi", "qty": "1", "status": "in hand", "verify": ""},
     {"part": "PCF8575 I2C expander module", "qty": "1", "status": "in hand",
-     "verify": "VERIFY 10 k pull-ups on SDA/SCL (else add 4.7 k to 5V_BOARD); A0-A2 low -> 0x20"},
+     "verify": "VERIFY whether the module carries SDA/SCL pull-ups: three sets on this bus is two too many. A0-A2 low -> 0x20"},
     {"part": "CD74HC4067 mux module", "qty": "1 (+1 later)", "status": "in hand",
      "verify": "VERIFY EN pull-down on the breakout (EN goes to GND regardless)"},
     {"part": "Whadda WPSE313 hall module", "qty": "3 of 8", "status": "in hand",
@@ -476,6 +528,12 @@ PARTS: list[dict[str, str]] = [
     {"part": "Sensor Kit temperature/humidity", "qty": "1", "status": "in hand",
      "verify": "READ THE MODULE: DHT11 (D7, Environment.setPin(7)) or DHT20 (I2C 0x38, Environment_I2C)"},
     {"part": "Sensor Kit light (LDR)", "qty": "1", "status": "in hand", "verify": ""},
+    {"part": "Sensor Kit OLED (SSD1306 128x64, u8x8)", "qty": "1", "status": "in hand",
+     "verify": "0x3C on Wire, 5 V; shares A4/A5 with the expander. VERIFY whether the module carries SDA/SCL pull-ups"},
+    {"part": "LCD1602 with an I2C backpack", "qty": "1", "status": "in hand",
+     "verify": "VERIFY the backpack's address: PCF8574 boards ship at 0x27 or 0x3F (A0-A2 solder jumpers) - "
+               "note which yours is, bring-up 1 accepts either. VERIFY whether it carries SDA/SCL pull-ups. "
+               "The backlight is most of the two screens' ~60 mA"},
     {"part": "capacitive soil-moisture sensor v1.2/v2.0", "qty": "5", "status": "in hand", "verify": "AOUT 0-3 V, ~10 k source"},
     {"part": "neodymium magnets (cart, screw, float)", "qty": "3+", "status": "in hand",
      "verify": "VERIFY polarity: south pole toward the hall face"},
@@ -483,20 +541,20 @@ PARTS: list[dict[str, str]] = [
      "verify": "READ THE MODULE: active-HIGH or active-LOW IN; coil current; contact rating (>= 2 A at 12 V DC); "
                "JD-VCC jumper fitted = coil on 5V_BOARD. Sets R1's direction and the sketch's OFF level"},
     {"part": "pump, 12 V DC diaphragm", "qty": "1", "status": "ASSUME",
-     "verify": "READ THE LABEL: voltage, running current (assume <= 1.5 A), inrush 3-5x; measure in 7f, then fix F1"},
+     "verify": "READ THE LABEL: voltage, running current (assume <= 1.5 A), inrush 3-5x; measure in 7d, then fix F1"},
     {"part": "12 V brick", "qty": "1", "status": "ASSUME >= 3 A",
      "verify": "READ THE LABEL: amps (a 2 A brick browns out at pump start)"},
     {"part": "flow meter YF-S401", "qty": "1", "status": "ASSUME",
      "verify": "READ THE SUFFIX: -0207 (0.2-3 L/min) or -3507 (0.3-6 L/min); ~5880 pulses/L; vertical, flow up; 5V_BOARD only"},
     {"part": "74HC00 quad NAND, DIP-14 + 5 V UBEC", "qty": "1 each", "status": "later, not now",
      "verify": "the hardware interlock (plan item 4) and the servo supply once several servos move at once"},
-    {"part": "fuse holders 5x20 + T 3 A slow-blow + 1 A", "qty": "2 + spares", "status": "to buy", "verify": "F1 value fixed after 7f"},
+    {"part": "fuse holders 5x20 + T 3 A slow-blow + 1 A", "qty": "2 + spares", "status": "to buy", "verify": "F1 value fixed after 7d"},
     {"part": "flyback / snubber parts", "qty": "-", "status": "not needed",
      "verify": "the relay module carries its own coil diode. No 1N5819 across the pump: contacts take the "
                "kick as an arc, not an avalanche. If a MOSFET ever comes back, use a 3 A part (1N5822 / "
                "SB360), not a 1 A 1N5819 on a 1.5 A pump"},
-    {"part": "resistors 1 k x1, 4.7 k x2, 10 k x4", "qty": "set", "status": "to buy",
-     "verify": "10 k: R1, R2, R3 and a spare; 1 k: flow-meter series; 4.7 k only if the I2C pull-ups are missing"},
+    {"part": "resistors 1 k x1, 4.7 k x2, 10 k x5", "qty": "set", "status": "to buy",
+     "verify": "10 k: R1, R2, R3, R4 and a spare; 1 k: flow-meter series; 4.7 k for the bus's one set of I2C pull-ups"},
     {"part": "470-1000 uF electrolytic (C1, >= 10 V) + 100 nF ceramic x4", "qty": "1 + 4", "status": "to buy",
      "verify": "C1 at the SERVO PLUG, not at the board; 100 nF for mux, expander, servo, spare"},
     {"part": "perfboard, screw terminals (>= 6 positions), wire >= 0.5 mm2 red/black/purple", "qty": "1 set", "status": "to buy",
@@ -510,44 +568,81 @@ PARTS: list[dict[str, str]] = [
 
 # ---------------------------------------------------------------- bench firmware contract
 BENCH_FIRMWARE_NOTE = ("The bench sketch is not part of this deliverable (pitch: 'Bench rig'); "
-                       "it must provide these commands over serial.")
+                       "it must provide these commands over serial. It is two binaries: the bring-up "
+                       "one, which can move the cart and start the pump from the keyboard, and the "
+                       "unattended one, which cannot. `status` prints which is running.")
+_BOTH, _BRINGUP = "bench + bring-up", "bring-up only"
 BENCH_COMMANDS: list[dict[str, str]] = [
-    {"command": "i2c", "does": "scan Wire, list addresses (expect 0x20; 0x38 if DHT20)"},
-    {"command": "mux <0-15>|all", "does": "select, wait >= 1 ms, read twice, print the second (14-bit raw)"},
-    {"command": "hall", "does": "stream screw (D3), home (expander P4) and float (D5) states; an I2C read error prints 'home unknown'"},
-    {"command": "flow", "does": "pulses per second on D2 and total since reset"},
-    {"command": "servo <+-us> <ms>", "does": "bounded: pulse offset for <= cap ms, then stop"},
-    {"command": "home", "does": "run toward home until HALL_HOME, bounded time, zero the count"},
-    {"command": "goto <1-5>", "does": "step to the outlet counting screw pulses, bounded"},
-    {"command": "pump <ms>", "does": "assert D6 for <= cap ms; refused when the float reads 'not OK'; aborts on no flow within the timeout; the cap lives in the same code path that asserts D6"},
-    {"command": "status", "does": "pins, counts, last error, uptime, and whether the IWDT is enabled"},
+    {"command": "i2c", "binary": _BOTH,
+     "does": "scan Wire, list addresses (expect 0x20, 0x3C and the LCD backpack at 0x27 or 0x3F; "
+             "0x38 if the kit has the DHT20)"},
+    {"command": "mux <0-15>|all", "binary": _BOTH,
+     "does": "select, wait >= 1 ms, read twice, print the second (14-bit raw)"},
+    {"command": "hall", "binary": _BOTH,
+     "does": "stream screw (D3), home (expander P4) and float (D5) states; an I2C read error prints 'home unknown'"},
+    {"command": "flow", "binary": _BOTH, "does": "pulses per second on D2 and total since reset"},
+    {"command": "clear contra", "binary": _BOTH,
+     "does": "release the contradiction latch: the only way back after 'float says OK, the meter saw nothing'"},
+    {"command": "status", "binary": _BOTH,
+     "does": "pins, counts, uptime, last error (`last=`), which binary is running (`build=`), `dry=`, "
+             "`contra=`, the compiled pump ON/OFF level, and whether the WDT is enabled, the window it "
+             "was granted and whether its counter is moving"},
+    {"command": "stop", "binary": _BOTH, "does": "cuts a dose in progress"},
+    {"command": "dry on|off", "binary": _BOTH,
+     "does": "latch: while it is on, every dose is refused (`dry on` also cuts a dose in progress). It is "
+             "the only way back from a latch, and a reset taken mid-dose sets one by itself: bring-up 4a, "
+             "4b, 4c and 7c all need a `dry off` after them"},
+    {"command": "help", "binary": _BOTH, "does": "one screen: the commands this binary has"},
+    {"command": "servo <+-us> <ms>", "binary": _BRINGUP, "does": "bounded: pulse offset for <= cap ms, then stop"},
+    {"command": "home", "binary": _BRINGUP, "does": "run toward home until HALL_HOME, bounded time, zero the count"},
+    {"command": "goto <1-5>", "binary": _BRINGUP, "does": "step to the outlet counting screw pulses, bounded"},
+    {"command": "pump <ms> [prime] [hang]", "binary": _BRINGUP,
+     "does": "assert D6 for <= cap ms; refused when the float reads 'not OK'; aborts on no flow within the "
+             "timeout; the cap lives in the same code path that asserts D6. 'prime' extends the no-flow "
+             "window and caps the dose at 20 s - it removes no abort. 'hang' starves the watchdog (7c)"},
+    {"command": "cal <pulses per litre>", "binary": _BRINGUP,
+     "does": "set the meter calibration at runtime, bounded to a sane range; 7b's number"},
 ]
 
+# Read this before the table: four steps deliberately reset the board mid-dose,
+# and every one of them leaves the rig refusing until a human types `dry off`.
+BRINGUP_NOTE = (
+    "**Any reset taken mid-dose latches dry.** The board sets `dose_in_flight` before it asserts D6 and "
+    "clears it after it drops it, so a RESET or a watchdog reset in between comes back with the dry "
+    "latch set and `last=resetmid` - and while that latch stands, every dose is refused. That is the "
+    "point of it. It also means the second half of a step cannot run until you clear the first half's "
+    "latch: `dry off` is written into 4a, 4b and 7c below, and step 6 turns the latch deliberately on. "
+    "`status` prints `dry=` so you never have to guess which state you are in.")
+
 BRINGUP: list[dict[str, str]] = [
-    {"step": "0", "do": "Continuity before power: 12 V to every 5 V rail OPEN; relay COM-NO OPEN with the coil off; every GND common at the star; barrel plug centre +.",
-     "proves": "nothing is crossed"},
-    {"step": "1", "do": "Board alone on USB: `i2c` sees 0x20 (and 0x38 if the kit has the DHT20).",
-     "proves": "I2C, pull-ups"},
+    {"step": "0", "do": "Continuity before power: 12 V to every 5 V rail OPEN; relay COM-NO OPEN with the coil off; every GND common at the star; barrel plug centre +. Then on USB, before 12 V goes onto COM: `status` says `build=bringup`, `dry=0`, `contra=0` and the pump level you expect from the module you read. `build=bench` before the unattended run.",
+     "proves": "nothing is crossed, and the binary is the one you think it is"},
+    {"step": "1", "do": "Board alone on USB: `i2c` sees 0x20 (expander), the LCD backpack at 0x27 or 0x3F (whichever your board is - note it on the rig), and 0x3C (OLED); 0x38 as well if the kit has the DHT20.",
+     "proves": "I2C, pull-ups, and that all three bus devices answer"},
     {"step": "2", "do": "Mux + one moisture sensor: `mux all` reads all 16 channels, the wired one moves when wetted.",
      "proves": "select lines, ADC path"},
     {"step": "3", "do": "Halls on USB: screw (D3) and float (D5) follow a magnet; home changes through expander P4.",
      "proves": "both pull-ups and the expander as an input"},
-    {"step": "4a", "do": "Relay DRY, no 12 V on COM: `pump 2000` clicks; meter COM-NO closed while it holds, open after.",
-     "proves": "polarity of IN and the sketch's OFF level"},
-    {"step": "4b", "do": "Still dry: press RESET mid-click -> contacts open.", "proves": "R1 holds the OFF level"},
-    {"step": "4c", "do": "Still dry: pull the D6 jumper mid-click -> contacts open. Only now wire 12 V onto COM.",
+    {"step": "4a", "do": "Relay DRY, no 12 V on COM: `status` first, to read the compiled pump level. `pump 2000` clicks; meter COM-NO closed while it holds, open after. COM-NO must ALSO stay open across a power cycle and across a `hang`-forced watchdog reset, not only across a `pump 2000`. The watchdog reset lands mid-dose, so it latches dry: `dry off` before 4b.",
+     "proves": "polarity of IN, the sketch's OFF level, and that the boot PFS write leaves D6 off through every reset"},
+    {"step": "4b", "do": "Still dry: press RESET mid-click -> contacts open. That reset latches dry too (`status` says `dry=1`): `dry off` before 4c.",
+     "proves": "R1 holds the OFF level"},
+    {"step": "4c", "do": "Still dry: pull the D6 jumper mid-click -> contacts open (no reset here, so no latch). Only now wire 12 V onto COM.",
      "proves": "no hidden path to the coil"},
     {"step": "5a", "do": "Float in the 'below the line' state -> `pump 2000` is refused.", "proves": "the firmware interlock"},
-    {"step": "5b", "do": "Unplug the float hall mid-dose -> stops; meter S in that state (>= 4 V).",
-     "proves": "an open reads as 'not OK' (R2)"},
-    {"step": "6", "do": "Move power to the barrel jack from the 12 V brick. Servo: `servo`, `home`, `goto`, then repeat with WiFi connected and the cart stalled against an end stop.",
+    {"step": "5b", "do": "Unplug the float hall mid-dose -> stops; meter S in that state (>= 4 V). Confirm `status` says `contra=0` afterwards: the float dropping mid-dose is the two sensors agreeing, not contradicting.",
+     "proves": "an open reads as 'not OK' (R2), and that agreement does not latch"},
+    {"step": "6", "do": "`dry on` first: the cart moves, the pump is refused unconditionally while the plumbing is open. Move power to the barrel jack from the 12 V brick (USB carried steps 1-5; it will not carry the servo). Servo: `servo`, `home`, `goto`, then repeat with WiFi connected and the cart stalled against an end stop. `dry off` before 7a.",
      "proves": "the buck carries stall + TX; a reset here means C1 is missing or too small"},
-    {"step": "7a", "do": "Bucket only: prime with `pump`, then `pump 2000` runs.", "proves": "the pump loop"},
+    {"step": "7a", "do": "Bucket only: prime with `pump <ms> prime` - `prime` extends the no-flow window and caps the dose at 20 s, and removes no abort. Then `pump 2000` runs.",
+     "proves": "the pump loop"},
     {"step": "7b", "do": "Pump a weighed 500 ml through outlet 1 counting pulses = ml/pulse; record the lowest flow that still pulses and set the no-flow timeout from it.",
      "proves": "meter variant, calibration, floor"},
-    {"step": "7c", "do": "RESET mid-dose -> stops. Then force a hang (a command that spins) -> the IWDT must reset the board and drop the pump inside its window.",
-     "proves": "the watchdog, now the ONLY thing between a hung sketch and a running pump"},
+    {"step": "7c", "do": "RESET mid-dose -> stops; `status` says `dry=1` and `last=resetmid`. `dry off`, then force a hang (`pump <ms> hang`) -> the WDT must reset the board and drop the pump inside its window; after that reset `status` must again say `dry=1` and `last=resetmid`. `dry off` before 7d.",
+     "proves": "the watchdog, now the ONLY thing between a hung sketch and a running pump, and that the latch survives a warm reset"},
     {"step": "7d", "do": "Measure pump start and dead-head current; fix the F1 value.", "proves": "fuse value"},
+    {"step": "7e", "do": "Flash the unattended binary: `status` says `build=bench` and `dry=0`, and none of `pump`, `cal`, `servo`, `home`, `goto` is a command (nor `hang` as a `pump` argument). Then start the 48-hour run.",
+     "proves": "the unattended binary is a different binary, with no console path to the pump or to the cart"},
 ]
 
 
@@ -595,8 +690,35 @@ def _check() -> None:
         assert w.frm in MODULES, w
         assert w.to in MODULES, w
         assert w.net in COLOUR_NAMES, w
-    pins = [w.board_pin for w in pin_map()]
-    assert len(pins) == len(set(pins)), pins
+    # A4/A5 are a BUS: the expander and both screens land there. Every other board
+    # pin is exclusive, and nothing but I2C may share one.
+    exclusive = [w.board_pin for w in pin_map() if w.net != "I2C"]
+    assert len(exclusive) == len(set(exclusive)), exclusive
+    assert all(w.board_pin in ("A4", "A5", "A4/A5") for w in WIRES if w.net == "I2C"), "I2C lives on A4/A5"
+    # A counted-pulse input that can float is indistinguishable from flow.
+    assert "10 k" in next(w for w in WIRES if w.board_pin == "D2").via, "D2 needs a pull"
+    # draw_power.py looks parts up by ref, so refs must be unique.
+    refs = [p["ref"] for p in INTERLOCK_PARTS]
+    assert len(refs) == len(set(refs)), refs
+    # The board ships the WDT, not the IWDT (firmware spec 2.5, DECISIONS #10's amendment).
+    assert not [r for r in TRUTH_TABLE if "IWDT" in " ".join(r.values())], "the WDT, not the IWDT"
+    # Every address a bench device answers on must be in bring-up 1, or a working rig reads as a fail.
+    step1 = next(st for st in BRINGUP if st["step"] == "1")["do"]
+    for addr in ("0x20", "0x3C"):
+        assert addr in step1, f"bring-up 1 must expect {addr}"
+    # The PCF8574 backpack ships at either address, so the step must accept either.
+    assert "0x27" in step1 and "0x3F" in step1, "bring-up 1 must accept both LCD backpack addresses"
+    # A step that resets the board mid-dose latches dry (firmware spec 2.3), and the next step
+    # cannot run until it is cleared. Whoever edits these steps has to keep the `dry off`s.
+    cmds = {c["command"] for c in BENCH_COMMANDS}
+    assert {"dry on|off", "stop"} <= cmds, "the bring-up needs `dry off` and `stop` to exist"
+    steps = {st["step"]: st["do"] for st in BRINGUP}
+    for st in ("4a", "4b", "7c"):
+        assert "`dry off`" in steps[st], f"bring-up {st} resets mid-dose: it must clear the latch"
+    assert "`dry on`" in steps["6"], "bring-up 6 moves the cart with the plumbing open: `dry on` first"
+    # The power drawing taps every 5V_BOARD load and assumes the servo is the last one.
+    loads = [r for r in POWER_BUDGET if r["rail"] == "5V_BOARD" and r["consumer"] not in ("total", "ceiling")]
+    assert loads[-1]["consumer"].startswith("SG90"), "the servo is the rightmost tap in power.png"
     assert not [w for w in WIRES if w.net == "5V_SERVO"], "the servo rail is gone: one 5 V rail"
     ins = [w for w in WIRES if w.to == "RELAY" and w.to_pin == "IN"]
     assert len(ins) == 1 and ins[0].frm_pin == "D6", "exactly one wire drives the relay's IN"

@@ -35,9 +35,19 @@ X_BUS = 6.6  # the 12 V bus: brick -> F1 (up) and F2 (down)
 Y_PUMP = 18.2  # the pump branch
 Y_F2 = 12.4  # the board branch
 Y_STAR = 2.2  # the star ground line
-X_TAB = 39.5  # the tables column
-X_RAIL_END = 36.0
-X_TAP0, TAP_DX = 14.6, 4.0  # the rail's consumer taps
+X_RAIL_END = 42.0
+# The tables sit UNDER the schematic, in two columns. Beside it they made the
+# canvas 3.2:1, which shrank the 8 pt tap currents - the numbers the drawing
+# exists for - to a couple of pixels once the PNG was scaled into the README.
+Y_TAB, X_TAB_L, TAB_GAP = 0.9, 0.5, 1.5  # the right column starts a gap past the widest table
+X_TAP0, TAP_DX = 16.4, 4.0  # the rail's consumer taps; TAP0 clears the UNO block's right edge
+# Ground returns drop to the star in these lanes, chosen to fall in the GAPS
+# between the tap labels above them: a lane inside a label reads as a strike-out.
+# Only "brick", "star" and "pump" run the length of the rail, so only those three have to
+# fall in a gap between tap labels; "star" also has to clear the servo BLOCK (x 22.5-27.9).
+X_LANE = {"brick": 6.0, "uno": 13.6, "star": 28.2, "pump": 19.2, "servo": 22.2, "rail": 33.0}
+X_NOTE = 29.0  # the two rail notes: right of the "star" lane, left of C1's drop
+_PART = {p["ref"]: p for p in nets.INTERLOCK_PARTS}  # by ref: INTERLOCK_PARTS grows
 
 
 def _a(ic: elm.Ic, name: str):
@@ -53,12 +63,19 @@ def _route(d, points, net: str, label: str | None = None, loc: str = "top") -> N
         d += seg
 
 
-def _to_star(d, xy, x_stub: float, label: str | None = None, dy: float = 0.0) -> None:
-    """Take a return down to the star line at x_stub (black; crossings carry no dot)."""
+def _to_star(d, xy, x_stub: float, label: str | None = None, dy: float = 0.0,
+             halign: str = "left") -> None:
+    """Take a return down to the star line at x_stub (black; crossings carry no dot).
+
+    halign="right" ends the label just left of the lane instead of starting just
+    right of it: that is how a label keeps clear of the NEXT lane along.
+    """
     pts = [xy, (x_stub, xy[1]), (x_stub, Y_STAR)] if abs(xy[0] - x_stub) > 1e-9 else [xy, (x_stub, Y_STAR)]
     _route(d, pts, "GND")
     if label:
-        d += style.note(label, (x_stub + 0.15, Y_STAR + 0.5 + dy), net="GND", fontsize=style.FS_PIN)
+        x = x_stub + (-0.35 if halign == "right" else 0.15)
+        d += style.note(label, (x, Y_STAR + 0.5 + dy), net="GND", fontsize=style.FS_PIN,
+                        halign=halign)
 
 
 def build() -> tuple[Path, Path]:
@@ -108,7 +125,7 @@ def build() -> tuple[Path, Path]:
         # "-|", not "-": VIN is the only pin on that side, so block_at centres it (its z is
         # ignored) and a straight run from F2 would be drawn as a diagonal.
         d += style.wire(f2.end, _a(uno, "VIN"), "12V", "-|", label="12 V")
-        d += style.note(["barrel jack, not USB, from bring-up 4 on:", "a 500 mA port will not carry a 650 mA stall"],
+        d += style.note(["barrel jack, not USB, from bring-up 6 on:", "a 500 mA port will not carry a 650 mA stall"],
                         (7.0, 8.4), net="12V", fontsize=style.FS_PIN)
 
         # ---------------------------------------------------------------- the 5V_BOARD rail
@@ -127,12 +144,14 @@ def build() -> tuple[Path, Path]:
             x = X_TAP0 + TAP_DX * i
             d += elm.Line().at((x, y_rail)).down(0.7).color(style.colour("5V_BOARD"))
             d += style.dot((x, y_rail), "5V_BOARD")
-            d += style.note([row["consumer"], row["current"]], (x - 0.15, y_rail - 0.85),
+            d += style.note([row["consumer"], row["current"]], (x + 0.18, y_rail - 0.85),
                             net="5V_BOARD", fontsize=style.FS_PIN)
-        d += style.note([f"total {total['current']}",
-                         f"ceiling {ceiling['current']}: {ceiling['note']}. On USB the port is the limit",
-                         "(500 mA) and the servo alone exceeds it."],
-                        (X_TAP0 - 0.15, y_rail - 2.1), net="5V_BOARD", fontsize=style.FS_PIN)
+        # to the right of the "star" lane: under the taps it was crossed by three returns
+        # wrapped to fit the lane between the "star" return and the servo's drop line
+        d += style.note(textwrap.wrap(
+            f"total {total['current']}. Ceiling {ceiling['current']}: {ceiling['note']}. "
+            "On USB the port is the limit (500 mA) and the servo alone exceeds it.", 68),
+            (X_NOTE, y_rail - 2.1), net="5V_BOARD", fontsize=style.FS_PIN)
 
         # ---------------------------------------------------------------- the servo, on that rail
         servo = style.block_at("SG90 continuous servo\n~250 mA run, ~650 mA stall",
@@ -143,54 +162,57 @@ def build() -> tuple[Path, Path]:
         _route(d, [(x_servo, y_rail - 0.7), (x_servo, 7.4), (red[0], 7.4), red], "5V_BOARD")
         x_c1 = x_servo - 1.6  # beside the run, so its drop to the star clears the servo block
         d += style.dot((x_c1, 7.4), "5V_BOARD")
-        d += elm.Capacitor(polar=True).at((x_c1, 7.4)).down(1.8).color(style.colour("5V_BOARD")).label(
-            f"C1 {nets.INTERLOCK_PARTS[6]['value']}\n+ 100 nF, AT THE PLUG", loc="right",
-            fontsize=style.FS_PIN, color=style.colour("5V_BOARD"))
-        _route(d, [(x_c1, 5.6), (x_c1, Y_STAR)], "GND")
-        d += style.note("its own pair from the rail's feed point", (red[0] - 0.2, 7.75),
+        d += elm.Capacitor(polar=True).at((x_c1, 7.4)).down(1.8).color(style.colour("5V_BOARD"))
+        # left of the cap, not right: right of it is the servo tap's drop line
+        d += style.note([f"C1 {_PART['C1']['value']}", "+ 100 nF, AT THE PLUG"], (x_c1 - 0.5, 6.9),
                         net="5V_BOARD", fontsize=style.FS_PIN, halign="right")
+        _route(d, [(x_c1, 5.6), (x_c1, Y_STAR)], "GND")
+        d += style.note("its own pair from the rail's feed point", (X_NOTE, 7.15),
+                        net="5V_BOARD", fontsize=style.FS_PIN)
 
         # ---------------------------------------------------------------- the star
         d += elm.Line().at((2.4, Y_STAR)).to((X_RAIL_END, Y_STAR)).color(style.colour("GND"))
         d += style.ground((13.0, Y_STAR))
         d += style.note("GND star, on the power board: one point, every return",
                         (13.3, Y_STAR - 0.5), net="GND", fontsize=style.FS_PIN)
-        _to_star(d, _a(brick, "12V-"), 6.0, "brick 12V-")
-        # 16.2, not 15.8: this return has to cross the 5V_BOARD rail somewhere, and at 15.8
-        # it crosses 0.1 from the 5 V pin, where the crossing reads as a short to GND.
-        _to_star(d, _a(perf, "GND"), 16.2, "the star itself:\nbrick 12V-, pump -,\nUNO GND, servo brown", dy=1.4)
-        _to_star(d, _a(uno, "GND"), 12.7, "UNO GND")
-        _to_star(d, _a(pump, "-"), 18.9, "pump - (12 V return)")
-        _to_star(d, brown, 20.8, "servo brown", dy=0.7)
-        stub = elm.Line().at((35.2, Y_STAR)).up(1.4).color(style.colour("GND"))
+        _to_star(d, _a(brick, "12V-"), X_LANE["brick"], "brick 12V-")
+        # These lanes cross the 5V_BOARD rail, which is fine (a crossing carries no dot) as long
+        # as none of them crosses within 0.1 of the 5 V pin, where it would read as a short.
+        _to_star(d, _a(perf, "GND"), X_LANE["star"],
+                 "the star itself:\nbrick 12V-, pump -,\nUNO GND, servo brown", dy=1.4, halign="right")
+        _to_star(d, _a(uno, "GND"), X_LANE["uno"], "UNO GND")
+        _to_star(d, _a(pump, "-"), X_LANE["pump"], "pump - (12 V return)", halign="right")
+        _to_star(d, brown, X_LANE["servo"], "servo brown", dy=0.7)
+        stub = elm.Line().at((X_LANE["rail"], Y_STAR)).up(1.4).color(style.colour("GND"))
         d += stub
         d += style.dot(stub.end, "GND", open_=True)
-        d += style.note("breadboard GND rail\n(one wire from the star)", (35.0, stub.end[1] + 0.3),
-                        net="GND", fontsize=style.FS_PIN)
+        d += style.note("breadboard GND rail\n(one wire from the star)",
+                        (X_LANE["rail"] + 0.2, stub.end[1] + 0.3), net="GND", fontsize=style.FS_PIN)
 
         # ---------------------------------------------------------------- tables and rules
-        y = style.table_note(d, "fuses (+ leg only, never a return)",
-                             style.table_lines(nets.FUSES, [("ref", "ref"), ("value", "value"),
-                                                            ("branch", "branch"), ("leg", "leg")]),
-                             (X_TAB, 21.4))
-        y = style.table_note(d, "what draws from which rail",
-                             style.table_lines(nets.POWER_BUDGET,
-                                               [("rail", "rail"), ("consumer", "consumer"),
-                                                ("current", "current"), ("note", "note")]),
-                             (X_TAB, y - 0.9))
-        d += style.frame((X_TAB, y - 0.9 - (len(nets.NEVER) + 1) * style.LH - 0.5),
-                         max(len(n) for n in nets.NEVER) * style.CH + 0.5,
-                         (len(nets.NEVER) + 1) * style.LH + 0.5, label="never")
-        d += style.note([f"- {n}" for n in nets.NEVER], (X_TAB + 0.25, y - 1.15),
+        fuse_lines = style.table_lines(nets.FUSES, [("ref", "ref"), ("value", "value"),
+                                                    ("branch", "branch"), ("leg", "leg")])
+        budget_lines = style.table_lines(nets.POWER_BUDGET,
+                                         [("rail", "rail"), ("consumer", "consumer"),
+                                          ("current", "current"), ("note", "note")])
+        x_tab_r = X_TAB_L + max(len(ln) for ln in fuse_lines + budget_lines) * style.CH + TAB_GAP
+        y = style.table_note(d, "fuses (+ leg only, never a return)", fuse_lines, (X_TAB_L, Y_TAB))
+        style.table_note(d, "what draws from which rail", budget_lines, (X_TAB_L, y - 0.9))
+        h_never = (len(nets.NEVER) + 1) * style.LH + 0.5
+        d += style.frame((x_tab_r, Y_TAB - h_never),
+                         max(len(n) for n in nets.NEVER) * style.CH + 0.5, h_never, label="never")
+        d += style.note([f"- {n}" for n in nets.NEVER], (x_tab_r + 0.25, Y_TAB - 0.25),
                         fontsize=style.FS_PIN)
         d += style.note(textwrap.wrap(nets.BENCH_POWER_ALT, 104),
-                        (X_TAB, y - 2.0 - (len(nets.NEVER) + 1) * style.LH - 0.5),
-                        fontsize=style.FS_PIN)
+                        (x_tab_r, Y_TAB - h_never - 0.9), fontsize=style.FS_PIN)
 
         # ---------------------------------------------------------------- legend
         style.legend(d, (0.5, 8.6), ("12V", "5V_BOARD", "PUMP_SW", "GND"))
-        d += style.note(["A crossing without a dot is not a connection.",
-                         "Signals are in overview.png; the relay and its",
+        # Wrapped short on purpose: the brick's return runs down x=6.0, and any line
+        # that reaches it is drawn through.
+        d += style.note(["A crossing without a dot is not",
+                         "a connection. Signals are in",
+                         "overview.png; the relay and its",
                          "resistors in pump-driver.png."],
                         (0.5, 6.4), fontsize=style.FS_PIN)
 

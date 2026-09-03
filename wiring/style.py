@@ -19,8 +19,45 @@ matplotlib.use("Agg")
 
 import schemdraw  # noqa: E402
 from schemdraw import elements as elm  # noqa: E402
+from schemdraw.backends import mpl as _mpl  # noqa: E402
 
 schemdraw.use("matplotlib")
+
+# schemdraw's matplotlib backend hardcodes linespacing=1 on every text object
+# (backends/mpl.py, Figure.text), which sets consecutive lines one em apart: in a
+# monospace face that puts one line's underscores and descenders inside the next
+# line's x-height, so a wrapped note full of identifiers renders as struck-out
+# text. Every multi-line note here is one text object, so one wrapper fixes all
+# four drawings. LH below must track this value: it is what sizes table frames.
+LINESPACING = 1.25
+_backend_text = _mpl.Figure.text
+
+
+def _text_with_pitch(self, s: str, *args, **kwargs) -> None:
+    _backend_text(self, s, *args, **kwargs)
+    if "\n" in s:
+        self.ax.texts[-1].set_linespacing(LINESPACING)
+
+
+_mpl.Figure.text = _text_with_pitch
+
+# ... and it saves with pad_inches=0, so whichever artist happens to be furthest
+# out ends flush against the image edge. A note that lands there loses its
+# descenders, and the next line added to it would be cut off rather than grow the
+# canvas. Give every drawing the same real margin instead.
+PAD_INCHES = 0.15
+_backend_save = _mpl.Figure.save
+
+
+def _save_with_margin(self, fname: str, transparent: bool = True, dpi: float = 72) -> None:
+    fig = self.getfig()
+    fig.subplots_adjust(0, 0, 1, 1)
+    fig.savefig(fname, bbox_inches="tight", transparent=transparent, dpi=dpi,
+                bbox_extra_artists=self.ax.get_default_bbox_extra_artists(),
+                pad_inches=PAD_INCHES)
+
+
+_mpl.Figure.save = _save_with_margin
 
 DATE = "2026-09-03"
 HERE = Path(__file__).resolve().parent
@@ -233,7 +270,8 @@ def frame(xy, width: float, height: float, label: str | None = None,
 
 
 # ---------------------------------------------------------------- tables on a drawing
-CH, LH = 0.145, 0.265  # drawing units per character / per line at FS_PIN
+CH = 0.145  # drawing units per character at FS_PIN
+LH = 0.265 * LINESPACING  # ... and per line: one em, times the pitch set above
 
 
 def table_lines(rows, columns) -> list[str]:

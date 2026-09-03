@@ -5,7 +5,9 @@ UNO Wire (A4/A5, 5 V) -> PCF8575 0x20; its P0-P3 drive the mux select lines
 is why the expander earns its place: a level can cross I2C, a counted pulse
 train cannot. MUX1 SIG -> A0; EN tied to GND; every module VCC from the
 5V_BOARD rail with 100 nF. MUX2 (later) dashed: shares S0-S3, EN from P6,
-SIG -> A1. The channel table, expander pin table and I2C addresses
+SIG -> A1. Both screens hang off the same SDA/SCL pair and are named in the
+I2C address table rather than drawn: they are consumers of this bus, not part
+of the sensing path. The channel table, expander pin table and I2C addresses
 are printed beside the blocks from nets.py. Label text must not contain "<"
 or "&" (schemdraw parses labels as XML): arrows / "≤" instead.
 """
@@ -145,6 +147,9 @@ def build() -> tuple[Path, Path]:
         d += uno
 
         # ------------------------------------------------ I2C + 5V_BOARD between UNO and PCF
+        d += style.note(["the same two wires also carry the two screens:",
+                         "OLED 0x3C and the LCD1602 backpack 0x27"],
+                        (uno.A5.x + 0.4, y_scl + 1.5), net="I2C", fontsize=style.FS_PIN)
         d += style.wire(uno.A5, pcf.SCL, "I2C", "-", label="SCL", loc="top")
         d += style.wire(uno.A4, pcf.SDA, "I2C", "-", label="SDA", loc="top")
         x_5v = uno["5V"].x
@@ -158,8 +163,8 @@ def build() -> tuple[Path, Path]:
         _dot(d, (x_pu, y_sda), "I2C")
         for y0, y1 in ((y_scl, y_5v), (y_5v, y_sda)):
             d += elm.Resistor().at((x_pu, y0)).to((x_pu, y1)).color(green).label(
-                "10 k", loc="top", fontsize=style.FS_PIN, color=green)
-        d += style.note("pull-ups on the PCF8575\nmodule (VERIFY; else\n4.7 k to 5V_BOARD)",
+                "4.7 k", loc="top", fontsize=style.FS_PIN, color=green)
+        d += style.note("ONE set for the whole bus:\nVERIFY all three modules\n(see the I2C notes below)",
                         (x_pu - 1.0, y_sda - 0.3), fontsize=style.FS_PIN)
 
         # PCF address pins A0-A2 to GND -> 0x20; INT open
@@ -207,8 +212,9 @@ def build() -> tuple[Path, Path]:
         d += style.line("right", x_p4 - pcf.P4.x, "SIGNAL").at(pcf.P4)
         d += style.wire((x_p4, pcf.P4.y), (x_p4, y_p4_end), "SIGNAL", "-")
         _dot(d, (x_p4, y_p4_end), "SIGNAL", open_=True)
+        # Short lines on purpose: a longer one runs into MUX2's 5V_BOARD flag label.
         d += style.note(["HALL_HOME S ← the manifold:", "the one INPUT on this chip.",
-                         "10 k pull-up R3; P4 HIGH first"],
+                         "10 k pull-up R3;", "write P4 HIGH first"],
                         (x_p4 + 0.25, y_p4_end + 0.15), net="SIGNAL", fontsize=style.FS_PIN)
 
         # MUX1 EN tied LOW

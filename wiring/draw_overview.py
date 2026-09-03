@@ -26,6 +26,7 @@ Label text must not contain "<" or "&" (schemdraw parses labels as XML): use
 
 from __future__ import annotations
 
+import textwrap
 from pathlib import Path
 
 from schemdraw import elements as elm
@@ -161,7 +162,10 @@ def build() -> tuple[Path, Path]:
         rail = elm.Line().at(_a(uno, "5V")).left(1.2).color(style.colour("5V_BOARD"))
         d += rail
         d += style.dot(rail.end, "5V_BOARD", open_=True)
-        d += style.note(["5V_BOARD rail", "pin = OUTPUT,", "~120 mA"],
+        # from POWER_BUDGET, never retyped: this figure was ~120 mA for three revisions
+        # after the rail's actual load had passed 400.
+        total = next(r for r in nets.POWER_BUDGET if r["consumer"] == "total")["current"]
+        d += style.note(["5V_BOARD rail", "pin = OUTPUT,", *textwrap.wrap(total, 16)],
                         (14.1, rail.end[1] - 0.75), net="5V_BOARD", fontsize=style.FS_PIN)
         _gnd(d, _a(uno, "GND"), "down", 0.5)
         d += style.note("→ GND star", (_a(uno, "GND")[0] + 0.25, _a(uno, "GND")[1] - 0.3),
@@ -224,8 +228,12 @@ def build() -> tuple[Path, Path]:
         # D6 leaves low, drops below the float-hall block and runs east in its own corridor:
         # level with the block it would be drawn straight through it.
         d += style.wire(_a(uno, "D6"), (23.0, 1.5), "SIGNAL", "|-")
-        _route(d, [(23.0, 1.5), (33.4, 1.5), (33.4, 16.8), _a(perf, "PUMP_EN")],
-               "SIGNAL", "PUMP_EN → the relay's IN (R1 holds the OFF level)", "top")
+        _route(d, [(23.0, 1.5), (33.4, 1.5), (33.4, 16.8), _a(perf, "PUMP_EN")], "SIGNAL")
+        # placed by hand, not centred on the segment: centred, its first glyph lands on the
+        # home hall's run down x=24.6 - a crossing sitting on the "crossings are not
+        # connections" label.
+        d += style.note("PUMP_EN → the relay's IN (R1 holds the OFF level)", (25.4, 2.0),
+                        net="SIGNAL", fontsize=style.FS_PIN)
         _flag5v(d, _a(perf, "5V_BOARD"), "left", 0.7)
         d += style.note(["the GND star is on this board:", "brick 12V-, pump -, UNO GND,",
                          "servo brown, breadboard GND rail"],
@@ -242,9 +250,11 @@ def build() -> tuple[Path, Path]:
         node_f1 = (X_PERF + 1.5, Y_12V)
         d += style.wire(_a(brick, "12V+"), node_f1, "12V", "-")
         d += style.dot(node_f1, "12V")
-        d += elm.Fuse().at(node_f1).down(1.3).color(style.colour("12V")).label(
-            "F1 T 3 A\npump branch\n(+ leg only)", loc="left", fontsize=style.FS_PIN,
-            color=style.colour("12V"))
+        d += elm.Fuse().at(node_f1).down(1.3).color(style.colour("12V"))
+        # as a note, right-aligned clear of the branch: loc="left" on a vertical element
+        # still centres the text on the wire, and the run is drawn through all three lines.
+        d += style.note(["F1 T 3 A", "pump branch", "(+ leg only)"], (node_f1[0] - 0.4, Y_12V - 0.15),
+                        net="12V", fontsize=style.FS_PIN, halign="right")
         d += style.wire((node_f1[0], Y_12V - 1.3), _a(perf, "12V_IN"), "12V", "|-")
         seg = elm.Line().at(node_f1).left(2.4).color(style.colour("12V"))
         d += seg
@@ -252,7 +262,7 @@ def build() -> tuple[Path, Path]:
             "F2 1 A", loc="top", fontsize=style.FS_PIN, color=style.colour("12V"))
         d += fuse2
         d += style.wire(fuse2.end, (_a(uno, "VIN")[0], Y_12V), "12V", "-",
-                        label="12 V → VIN (barrel). USB powers the board for bring-up 1-3 only:\n"
+                        label="12 V → VIN (barrel). USB powers the board through bring-up 5 only:\n"
                               "a 500 mA port will not carry the servo's stall")
         d += style.wire((_a(uno, "VIN")[0], Y_12V), _a(uno, "VIN"), "12V", "-")
         _gnd(d, _a(brick, "12V-"), "left", 0.6)
@@ -282,14 +292,16 @@ def build() -> tuple[Path, Path]:
         wbox(29.2, 3.6, -5.3, 3.1, ["flow meter", "VERTICAL, flow UP,", "tilt ≤ 5°",
                                     "no pulses below its", "flow floor (read the", "label)"])
         wbox(23.0, 4.6, -4.7, 1.9, ["manifold", "5 ball gates"])
-        for xa, xb, lbl in ((40.9, 39.2, ""), (35.0, 32.9, "30-50 cm soft silicone\n(pulsation damper)"),
-                            (29.2, 27.6, "")):
+        for xa, xb in ((40.9, 39.2), (29.2, 27.6)):
             d += elm.Line().at((xa, -3.7)).to((xb, -3.7)).color(style.colour("WATER"))
             d += elm.Arrowhead().at((xb, -3.7)).theta(180).color(style.colour("WATER"))
-            if lbl:
-                d += style.note(lbl, ((xa + xb) / 2, -3.9), net="WATER", fontsize=style.FS_PIN,
-                                halign="center")
-        _route(d, [(32.9, -3.7), (30.9, -3.7), (30.9, -5.3)], "WATER")
+        # The meter is mounted vertical and flow enters at its BOTTOM, so the pipe passes
+        # UNDER the block and comes up into its bottom edge. Routed through the block (which
+        # is what "left, then down" did) it draws a second rectangle on top of the meter.
+        _route(d, [(35.0, -3.7), (33.6, -3.7), (33.6, -5.9), (30.9, -5.9), (30.9, -5.42)], "WATER")
+        d += elm.Arrowhead().at((30.9, -5.3)).theta(90).color(style.colour("WATER"))
+        d += style.note("30-50 cm soft silicone (pulsation damper)", (33.9, -6.05),
+                        net="WATER", fontsize=style.FS_PIN, halign="center")
         for i in range(5):
             d += elm.Line().at((23.4 + i * 0.9, -4.7)).down(0.8).color(style.colour("WATER"))
         d += style.note(["outlets 1-5 → pots", "(the bucket on the bench)"], (23.0, -5.6),
@@ -313,9 +325,11 @@ def build() -> tuple[Path, Path]:
             "HIGH). A counted pulse train - the screw hall, the flow meter - through the mux or the",
             "expander: a switch that is elsewhere when the edge arrives loses the count.",
             "",
-            "Series and pull parts, all on the board side: 1 k in D2 (the flow pulse), a 10 k pull-up to",
-            "5V_BOARD on each hall's S line (screw, home, float), a 10 k on D6 to whichever level leaves",
-            "the relay off, 100 nF across each module's VCC and GND, and C1 470-1000 uF at the servo plug.",
+            "Series and pull parts, all on the board side: a 1 k in series and R4, a 10 k pull-up, on D2 (an",
+            "unplugged flow meter must read a firm level, not oscillate: a floating counted-pulse input is",
+            "indistinguishable from flow), a 10 k pull-up to 5V_BOARD on each hall's S line (screw, home,",
+            "float), a 10 k on D6 to whichever level leaves the relay off, 100 nF across each module's VCC",
+            "and GND, and C1 470-1000 uF at the servo plug.",
             "",
             "MUX1 C6-C15 are open: pots 6-15 of the next manifolds. Manifolds 2 and 3 take D12/D13 for the",
             "servos and D4/D10 for the screw halls, their home halls go to expander P8/P9, MUX2's SIG to",
@@ -324,8 +338,12 @@ def build() -> tuple[Path, Path]:
         d += style.note(notes, (6.6, -0.9), fontsize=style.FS_PIN)
         bench = len([w for w in nets.WIRES if not w.later])
         later = len(nets.WIRES) - bench
-        d += style.note(f"{bench} wires on this bench, {later} more when the second mux and manifold arrive.",
-                        (6.6, -6.2), fontsize=style.FS_PIN)
+        d += style.note(
+            [f"{bench} wires on this bench, {later} more when the second mux and manifold arrive.",
+             "Six of the {bench} are the two I2C screens (OLED 0x3C, LCD1602 backpack 0x27): they hang off the".format(bench=bench),
+             "same A4/A5 pair as the expander, with their own 5V_BOARD and GND, and are drawn nowhere - see",
+             "the pin map and sensor-bus.png."],
+            (6.6, -0.9 - len(notes) * style.LH - 0.3), fontsize=style.FS_PIN)
 
         d += style.title(d, TITLE)
         return style.save(d, STEM)

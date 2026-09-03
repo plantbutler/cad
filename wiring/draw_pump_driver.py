@@ -20,6 +20,7 @@ labels as XML. Use arrows and "≤".
 
 from __future__ import annotations
 
+import textwrap
 from pathlib import Path
 
 from schemdraw import elements as elm
@@ -71,7 +72,7 @@ def _route(d, points, net: str, label: str | None = None, loc: str = "top") -> N
 
 
 def _terminal(d, xy, name: str, side: str, ext_label, net: str, ext_len: float = EXT,
-              name_below: bool = False):
+              name_below: bool = False, ext_halign: str = "left"):
     """A screw terminal on the frame edge: a square, its name inside, a stub outwards."""
     x, y = xy
     c = style.colour(net)
@@ -80,7 +81,11 @@ def _terminal(d, xy, name: str, side: str, ext_label, net: str, ext_len: float =
     y_name = y - 0.17 if name_below else y + 0.3
     if side == "left":
         d += style.line("left", ext_len, net).at((x - 0.14, y))
-        d += style.note(ext_label, (x - 0.14 - ext_len, y - 0.62), net=net, fontsize=style.FS_PIN)
+        # ext_halign="right": the label ends left of the stub, clear of the frame edge
+        # and of the pump return that comes up this side.
+        x_lbl = x - 0.14 - ext_len + (-0.11 if ext_halign == "right" else 0.0)
+        d += style.note(ext_label, (x_lbl, y - 0.62), net=net, fontsize=style.FS_PIN,
+                        halign=ext_halign)
         d += style.note(name, (x + 0.22, y_name), net=net, fontsize=style.FS_PIN)
         return (x - 0.14 - ext_len, y)
     d += style.line("right", ext_len, net).at((x + 0.14, y))
@@ -115,7 +120,8 @@ def build() -> tuple[Path, Path]:
         brk_end = _terminal(d, (X_FL, Y_BRK), "", "left", "brick 12V-", "GND")  # noqa: F841
         _route(d, [(X_FL, Y_BRK), (X_STAR, Y_BRK), (X_STAR, Y_STAR)], "GND")
         star_end = _terminal(d, (X_FL, Y_STAR), "GND (star)", "left",
-                             ["pump -, UNO GND,", "servo brown,", "breadboard GND rail"], "GND")
+                             ["pump -, UNO GND,", "servo brown,", "breadboard GND rail"], "GND",
+                             ext_halign="right")
         d += style.line("right", X_STAR - X_FL, "GND").at((X_FL, Y_STAR))
         d += elm.Dot(radius=0.17).at((X_STAR, Y_STAR)).color(style.colour("GND"))
         d += style.note("one star, every return", (X_STAR + 0.3, Y_STAR - 0.1),
@@ -181,8 +187,8 @@ def build() -> tuple[Path, Path]:
 
         # float hall -> D5, with R2 pulling an open line to "not OK"
         s, d5 = _a(hall, "S"), _a(uno, "D5")
-        d += style.wire(s, d5, "SIGNAL", "-", label="float sense: straight to D5, through no gate",
-                        loc="top")
+        d += style.wire(s, d5, "SIGNAL", "-", label="float sense: straight to D5, no gate",
+                        loc="bottom")
         d += style.dot((10.0, s[1]), "SIGNAL")
         d += elm.Resistor().at((10.0, s[1])).up(1.6).color(style.colour("5V_BOARD")).label(
             f"R2 {_PART['R2']['value']}", loc="top", fontsize=style.FS_PIN,
@@ -190,11 +196,13 @@ def build() -> tuple[Path, Path]:
         d += style.line("up", 0.4, "5V_BOARD").at((10.0, s[1] + 1.6))
         d += style.dot((10.0, s[1] + 2.0), "5V_BOARD", open_=True)
         d += style.note("5V_BOARD rail: an open, dead\nor unplugged hall reads 'not OK'",
-                        (10.4, s[1] + 1.95), net="5V_BOARD", fontsize=style.FS_PIN, halign="right")
+                        (9.6, s[1] + 2.0), net="5V_BOARD", fontsize=style.FS_PIN, halign="right")
 
         # ------------------------------------------------ notes
-        d += style.note([f"- {n}" for n in nets.RELAY_NOTES[:4]], (13.5, Y_FT + 2.2),
-                        fontsize=style.FS_PIN)
+        notes = []
+        for n in nets.RELAY_NOTES[:5]:
+            notes += textwrap.wrap(f"- {n}", 108, subsequent_indent="  ")
+        d += style.note(notes, (13.5, Y_FT + 4.0), fontsize=style.FS_PIN)
         d += style.note([
             "R1 pulls D6 to whichever level leaves the relay OFF: to GND if the module's IN is active-HIGH, to",
             "5V_BOARD if it is active-LOW. It is what holds the pump off while D6 is still an input - at reset,",
@@ -202,10 +210,12 @@ def build() -> tuple[Path, Path]:
         ], (X_RET, Y_RET - 1.1), net="SIGNAL", fontsize=style.FS_PIN)
         d += style.note([
             "THE GAP: no hardware AND any more. A sketch that hangs with D6 asserted keeps the pump running.",
-            "Bounded only by firmware: the IWDT enabled, a hard maximum run time beside the line that asserts D6,",
-            "and a no-flow abort from the meter. Plan item 4 puts a 74HC00 back between D6, the float and IN.",
+            "Bounded only by firmware: the watchdog enabled (the WDT, not DECISIONS #10's IWDT), a hard maximum",
+            "run time beside the line that asserts D6, and a no-flow abort from the meter. A float that grants",
+            "permission while the meter counts nothing latches, and every later dose is refused until a human clears it.",
+            "Plan item 4 puts a 74HC00 back between D6, the float and IN.",
         ], (X_RET, Y_RET - 2.3), net="PUMP_SW", fontsize=style.FS_PIN)
-        style.legend(d, (X_RET, Y_RET - 3.6), ("12V", "PUMP_SW", "5V_BOARD", "GND", "SIGNAL"))
+        style.legend(d, (X_RET, Y_RET - 4.4), ("12V", "PUMP_SW", "5V_BOARD", "GND", "SIGNAL"))
 
         d += style.title(d, TITLE)
         return style.save(d, STEM)
