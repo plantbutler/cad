@@ -1,9 +1,11 @@
 """Drawing 3: the sensor bus — CD74HC4067 mux and PCF8575 expander in detail.
 
 UNO Wire (A4/A5, 5 V) -> PCF8575 0x20; its P0-P3 drive the mux select lines
-(drawn as a 4-wire bus); MUX1 SIG -> A0; EN tied to GND; every module VCC
-from the 5V_BOARD rail with 100 nF. MUX2 (later) dashed: shares S0-S3, EN
-from P5, SIG -> A1. The channel table, expander pin table and I2C addresses
+(drawn as a 4-wire bus) and P4 reads the manifold's home hall back IN, which
+is why the expander earns its place: a level can cross I2C, a counted pulse
+train cannot. MUX1 SIG -> A0; EN tied to GND; every module VCC from the
+5V_BOARD rail with 100 nF. MUX2 (later) dashed: shares S0-S3, EN from P6,
+SIG -> A1. The channel table, expander pin table and I2C addresses
 are printed beside the blocks from nets.py. Label text must not contain "<"
 or "&" (schemdraw parses labels as XML): arrows / "≤" instead.
 """
@@ -109,8 +111,8 @@ def build() -> tuple[Path, Path]:
             ("SCL", "left", 6.4), ("SDA", "left", 4.2), ("A0", "left", 3.0), ("A1", "left", 2.4),
             ("A2", "left", 1.8), ("INT", "left", 0.9, "n/c"),
             ("P0", "right", 6.5), ("P1", "right", 5.9), ("P2", "right", 5.3), ("P3", "right", 4.7),
-            ("P4", "right", 4.1, "spare"), ("P5", "right", 3.5), ("P6", "right", 2.9, "spare"),
-            ("P7", "right", 2.3, "spare"), ("P8-15", "right", 1.7, "spare"),
+            ("P4", "right", 4.1), ("P5", "right", 3.5, "spare"), ("P6", "right", 2.9),
+            ("P7", "right", 2.3, "spare"), ("P8-15", "right", 1.7, "next home halls"),
             ("VCC", "bottom", 1.4), ("GND", "bottom", 2.9),
         ], size=(W_PCF, H_PCF)).at((X_PCF_R, Y_S0)).anchor("P0")
         d += pcf
@@ -192,11 +194,22 @@ def build() -> tuple[Path, Path]:
         d += elm.Line().at((x_drop, y_j)).to(mux2["S0-S3"]).color(grey).linewidth(3.2).linestyle(style.LATER_LS)
         d += style.note("S0-S3: the same 4 wires\ntapped for MUX2 (later)", (x_drop + 1.3, y_j + 2.6),
                         fontsize=style.FS_PIN)
-        x_p5 = xc + 1.4
-        d += style.line("right", x_p5 - pcf.P5.x, "SIGNAL", later=True).at(pcf.P5)
-        d += style.wire((x_p5, pcf.P5.y), (x_p5, mux2.EN.y), "SIGNAL", "-", later=True)
-        d += style.wire((x_p5, mux2.EN.y), mux2.EN, "SIGNAL", "-", later=True, label="MUX2_EN ← P5 (later)",
+        x_p6 = xc + 1.4
+        d += style.line("right", x_p6 - pcf.P6.x, "SIGNAL", later=True).at(pcf.P6)
+        d += style.wire((x_p6, pcf.P6.y), (x_p6, mux2.EN.y), "SIGNAL", "-", later=True)
+        d += style.wire((x_p6, mux2.EN.y), mux2.EN, "SIGNAL", "-", later=True, label="MUX2_EN ← P6 (later)",
                         loc="bottom")
+
+        # P4 is the one expander pin read as an INPUT: the manifold's home hall lands here.
+        # It crosses the dashed MUX2_EN run once, without a dot: not a connection.
+        x_p4 = xc + 1.9
+        y_p4_end = mux2.EN.y - 1.6
+        d += style.line("right", x_p4 - pcf.P4.x, "SIGNAL").at(pcf.P4)
+        d += style.wire((x_p4, pcf.P4.y), (x_p4, y_p4_end), "SIGNAL", "-")
+        _dot(d, (x_p4, y_p4_end), "SIGNAL", open_=True)
+        d += style.note(["HALL_HOME S ← the manifold:", "the one INPUT on this chip.",
+                         "10 k pull-up R3; P4 HIGH first"],
+                        (x_p4 + 0.25, y_p4_end + 0.15), net="SIGNAL", fontsize=style.FS_PIN)
 
         # MUX1 EN tied LOW
         d += style.line("left", 0.4, "GND").at(mux1.EN)

@@ -1,15 +1,21 @@
-"""Drawing 2: the pump driver and interlock perfboard, component level.
+"""Drawing 2: what switches the pump, and what holds it off.
 
-Everything inside the frame is soldered on one perfboard: the 12 V pump loop
-(D1, Q1) on screw terminals in >= 0.5 mm2 wire, with F1 upstream in the brick
-lead, and the 74HC00 interlock
-(G1 inverter on the float line with R4, G2 = NAND(PUMP_EN, FLOAT_OK), G3
-inverter into the gate through R1, G4 parked on GND). Values and roles come
-from nets.INTERLOCK_PARTS / nets.GATES; the terminal names from
-nets.PERFBOARD_TERMINALS. Facts: wiring brief 2026-09-02, DECISIONS #7.
+Revision 2026-09-03. The 74HC00 and the MOSFET are gone: a bought relay
+module switches the 12 V + leg, and the interlock moved into firmware. What
+is left in hardware is worth reading in one glance:
+
+  * the 12 V loop -- brick, F1, COM, NO, pump, star -- crosses no board pin;
+  * D6 reaches nothing but the relay's IN, with R1 holding the OFF level
+    whenever D6 is not an asserted output (reset, boot, jumper pulled);
+  * the float hall goes straight to D5 through R2 and through no gate at all,
+    which is the honest picture: nothing in hardware ANDs "firmware says pump"
+    with "the tank has water" any more. See nets.INTERLOCK_NOTES, THE GAP.
+
+Values and roles come from nets.INTERLOCK_PARTS, the terminal names from
+nets.PERFBOARD_TERMINALS and nets.RELAY_TERMINALS.
 
 Label text must not contain "<" or "&": schemdraw's bbox estimator parses
-labels as XML. Use the arrows / "≤" below.
+labels as XML. Use arrows and "≤".
 """
 
 from __future__ import annotations
@@ -17,64 +23,56 @@ from __future__ import annotations
 from pathlib import Path
 
 from schemdraw import elements as elm
-from schemdraw import logic
 
 import nets
 import style
 
 STEM = "pump-driver"
-TITLE = "Plant Butler bench: pump driver and interlock perfboard (component level)"
+TITLE = "Plant Butler bench: what switches the pump (relay) and what holds it off"
 
 # ---------------------------------------------------------------- geometry
-X_L = 2.0  # left frame edge: terminals to the UNO / float hall / 5 V sit on it
-X_R = 21.4  # right frame edge: pump and star terminals
-EXT = 4.5  # length of the stub wire outside a terminal (left side)
-EXT_F1 = 7.4  # the 12V_IN stub: longer, F1 sits on it
-EXT_R = 3.2  # right side (pump leads)
-Y_12V = 11.0  # PUMP+ row
-Y_PUMPM = 9.0  # PUMP- row (switched return)
-Y_EN = 8.5  # PUMP_EN row = G2 in1
-Y_G23 = 8.25  # G2 / G3 axis (in1 = +0.25, in2 = -0.25)
-Y_FLT = 6.4  # FLT_S row = G1 axis
-Y_FLTP = 5.2  # FLT_+ terminal
-Y_FLTM = 4.65  # FLT_- terminal
-Y_RAIL = 4.0  # 5V_BOARD rail
-Y_FOK = 1.6  # FLOAT_OK return to D5
-Y_STAR = 1.0  # GND star
-X_R3 = 3.2  # R3 pull-down and the FLT_+ drop
-X_R4 = 4.0  # R4 pull-up
-X_G1, X_G2, X_G3 = 5.6, 9.0, 11.8  # gate input-side x
-X_Q1 = 17.0  # Q1 drain / source x
-X_D1 = 18.4  # flyback diode x
+X_FL, X_FR = 3.0, 9.0  # power-board frame edges
+Y_FB, Y_FT = 4.6, 11.2  # frame bottom / top
+Y_12V = 9.8  # brick + leg: 12V_IN -> 12V_OUT -> COM -> NO -> pump +
+Y_BRK = 7.4  # brick 12V- terminal
+Y_STAR = 5.6  # the star row
+X_STAR = 6.0  # the star dot
+X_RET = 1.2  # the pump's return runs up this line into the star stub
+Y_RET = -0.2  # ... along this one, below every block
+EXT_F1 = 6.0  # the 12V_IN stub: long, F1 sits on it
+EXT = 1.8
+
+REL = (12.0, 6.4)  # relay block, lower-left corner
+REL_SIZE = (7.4, 4.2)
+UNO = (13.6, 1.2)
+UNO_SIZE = (4.6, 2.2)
+RAILS = (19.6, 1.2)
+RAILS_SIZE = (4.8, 2.2)
+HALL = (2.0, 1.2)
+HALL_SIZE = (5.6, 2.2)
+PUMP = (22.4, 8.0)
+PUMP_SIZE = (4.4, 2.6)
 
 _PART = {p["ref"]: p for p in nets.INTERLOCK_PARTS}
-_GATE = {g["gate"]: g for g in nets.GATES}
 _TERM = {t["terminal"]: t for t in nets.PERFBOARD_TERMINALS}
-_ROLE = {"G1": "inverter", "G2": "NAND", "G3": "inverter", "G4": "unused"}
 
 
-def _gate(xy, gid: str) -> logic.Nand:
-    """One 74HC00 gate, facing right, labelled with its DIP pins and role."""
-    a, b, y = _GATE[gid]["pins"]
-    return logic.Nand().at(xy).theta(0).color(style.colour("SIGNAL")).label(
-        f"{gid}  {a},{b}→{y}  {_ROLE[gid]}", loc="top", fontsize=style.FS_PIN,
-        color=style.colour("SIGNAL"))
+def _a(ic: elm.Ic, name: str):
+    return getattr(ic, name)
 
 
-def _tie(d, x: float, gate: logic.Nand, net: str = "SIGNAL") -> None:
-    """Join both inputs of `gate` to the wire arriving at (x, gate axis)."""
-    d += elm.Dot(radius=0.08).at((x, (gate.in1.y + gate.in2.y) / 2)).color(style.colour(net))
-    d += style.line("up", 0.25, net).at((x, (gate.in1.y + gate.in2.y) / 2))
-    d += style.line("down", 0.25, net).at((x, (gate.in1.y + gate.in2.y) / 2))
-    d += style.line("right", gate.in1.x - x, net).at((x, gate.in1.y))
-    d += style.line("right", gate.in2.x - x, net).at((x, gate.in2.y))
+def _route(d, points, net: str, label: str | None = None, loc: str = "top") -> None:
+    """An orthogonal path through `points`; the label goes on the first segment."""
+    for i in range(len(points) - 1):
+        seg = elm.Line().at(points[i]).to(points[i + 1]).color(style.colour(net))
+        if label and i == 0:
+            seg.label(label, loc=loc, fontsize=style.FS_BODY, color=style.colour(net))
+        d += seg
 
 
-def _terminal(d, xy, name: str, side: str, ext_label: str, net: str, below: str | None = None,
-              ext_len: float = EXT, name_below: bool = False) -> None:
-    """A screw terminal on the frame edge: a small square, its name inside the frame
-    (above the wire, or below it), a stub wire outwards with what lands on it written
-    above it (and `below` under it)."""
+def _terminal(d, xy, name: str, side: str, ext_label, net: str, ext_len: float = EXT,
+              name_below: bool = False):
+    """A screw terminal on the frame edge: a square, its name inside, a stub outwards."""
     x, y = xy
     c = style.colour(net)
     d += elm.Rect(corner1=(x - 0.14, y - 0.14), corner2=(x + 0.14, y + 0.14),
@@ -82,193 +80,132 @@ def _terminal(d, xy, name: str, side: str, ext_label: str, net: str, below: str 
     y_name = y - 0.17 if name_below else y + 0.3
     if side == "left":
         d += style.line("left", ext_len, net).at((x - 0.14, y))
-        d += style.note(ext_label, (x - 0.14 - ext_len, y + 0.36), net=net, fontsize=style.FS_BODY)
+        d += style.note(ext_label, (x - 0.14 - ext_len, y - 0.62), net=net, fontsize=style.FS_PIN)
         d += style.note(name, (x + 0.22, y_name), net=net, fontsize=style.FS_PIN)
-        if below:
-            d += style.note(below, (x - 0.14 - ext_len, y - 0.1), net=net, fontsize=style.FS_PIN)
-    else:
-        d += style.line("right", ext_len, net).at((x + 0.14, y))
-        d += style.note(ext_label, (x + 0.3, y + 0.36), net=net, fontsize=style.FS_BODY)
-        d += style.note(name, (x - 0.22, y_name), net=net, fontsize=style.FS_PIN, halign="right")
-        if below:
-            d += style.note(below, (x + 0.3, y - 0.1), net=net, fontsize=style.FS_PIN)
+        return (x - 0.14 - ext_len, y)
+    d += style.line("right", ext_len, net).at((x + 0.14, y))
+    d += style.note(ext_label, (x + 0.3, y + 0.36), net=net, fontsize=style.FS_PIN)
+    d += style.note(name, (x - 0.22, y_name), net=net, fontsize=style.FS_PIN, halign="right")
+    return (x + 0.14 + ext_len, y)
 
 
-def _dot(d, xy, net: str) -> None:
-    d += elm.Dot(radius=0.08).at(xy).color(style.colour(net))
-
-
-def _gnd(d, xy) -> None:
-    """Ground symbol: every one of these is the perfboard star (see the U1 note)."""
-    d += elm.Ground().at(xy).theta(0).color(style.colour("GND"))
+def _flag(d, xy, net: str, text, up: float = 1.4):
+    """A short stub ending in an open dot: the rail, drawn where it is tapped."""
+    d += style.line("up", up, net).at(xy)
+    top = (xy[0], xy[1] + up)
+    d += style.dot(top, net, open_=True)
+    d += style.note(text, (top[0] + 0.18, top[1] + 0.1), net=net, fontsize=style.FS_PIN)
 
 
 def build() -> tuple[Path, Path]:
-    blue = style.colour("SIGNAL")
-    black = style.colour("GND")
     red = style.colour("12V")
-    orange = style.colour("5V_BOARD")
 
     with style.drawing() as d:
-        d += style.frame((X_L, 0.2), X_R - X_L, 11.8,
-                         label="perfboard: soldered, screw terminals; 12 V loop in >= 0.5 mm2 (never breadboard / Dupont)")
+        # ------------------------------------------------ the power board
+        d += style.frame((X_FL, Y_FB), X_FR - X_FL, Y_FT - Y_FB,
+                         label="power board: F1, two 12 V terminals, the star.\n"
+                               "Soldered, screw terminals, >= 0.5 mm2 (never breadboard / Dupont)")
+        f1_end = _terminal(d, (X_FL, Y_12V), "12V_IN", "left", "brick 12V+", "12V",
+                           ext_len=EXT_F1, name_below=True)
+        d += elm.Fuse().at((f1_end[0] + 1.2, Y_12V)).right(2.0).color(red).label(
+            f"F1 {_PART['F1']['value']}, + leg only", loc="top", fontsize=style.FS_PIN, color=red)
+        d += style.line("right", X_FR - X_FL, "12V", label="12 V").at((X_FL, Y_12V))
+        out_end = _terminal(d, (X_FR, Y_12V), "12V_OUT", "right", "to relay COM", "12V")
 
-        # ------------------------------------------------ 12 V pump loop (top)
-        # F1 is in the brick lead, upstream of the terminal (nets.py: BRICK 12V+ ->
-        # PERFBOARD 12V_IN via F1), so the >= 0.5 mm2 run is fused too.
-        _terminal(d, (X_L, Y_12V), _TERM["12V_IN"]["terminal"], "left", "brick 12V+ via F1", "12V",
-                  name_below=True, ext_len=EXT_F1, below=">= 0.5 mm2")
-        d += elm.Fuse().at((X_L - 0.14 - EXT_F1 + 2.9, Y_12V)).right(2.0).color(red).label(
-            "F1 T 3 A slow-blow\n+ leg only, in the brick lead", loc="bottom",
-            fontsize=style.FS_PIN, color=red)
-        d += style.line("right", X_D1 - X_L, "12V", label="PUMP+  12 V", loc="top").at((X_L, Y_12V))
-        _dot(d, (X_D1, Y_12V), "12V")
-        d += style.line("right", X_R - X_D1, "12V").at((X_D1, Y_12V))
-        _terminal(d, (X_R, Y_12V), "PUMP+", "right", ">= 0.5 mm2", "12V", ext_len=EXT_R)
+        brk_end = _terminal(d, (X_FL, Y_BRK), "", "left", "brick 12V-", "GND")  # noqa: F841
+        _route(d, [(X_FL, Y_BRK), (X_STAR, Y_BRK), (X_STAR, Y_STAR)], "GND")
+        star_end = _terminal(d, (X_FL, Y_STAR), "GND (star)", "left",
+                             ["pump -, UNO GND,", "servo brown,", "breadboard GND rail"], "GND")
+        d += style.line("right", X_STAR - X_FL, "GND").at((X_FL, Y_STAR))
+        d += elm.Dot(radius=0.17).at((X_STAR, Y_STAR)).color(style.colour("GND"))
+        d += style.note("one star, every return", (X_STAR + 0.3, Y_STAR - 0.1),
+                        net="GND", fontsize=style.FS_PIN)
 
-        # flyback diode across the pump terminals, cathode (stripe) to PUMP+
-        d += elm.Schottky().at((X_D1, Y_PUMPM)).up(Y_12V - Y_PUMPM).color(red).label(
-            f"D1 {_PART['D1']['value']}\nstripe (cathode)\nup = PUMP+", loc="bottom",
-            fontsize=style.FS_PIN, color=red, halign="left")
+        # ------------------------------------------------ the relay module
+        relay = style.block_at(
+            "K1  relay module\n(bought; VERIFY active-HIGH\nor active-LOW on IN)",
+            [("COM", "left", 3.4), ("IN", "left", 0.8),
+             ("NO", "right", 3.4), ("NC", "right", 0.8),
+             ("VCC", "bottom", 2.4), ("GND", "bottom", 5.0)],
+            REL_SIZE, pinspacing=2.6).at(REL)
+        d += relay
+        d += style.wire(out_end, _a(relay, "COM"), "12V", "-")
+        d += style.note("NC: not connected.\nNO, so a dead coil is a dead pump.",
+                        (_a(relay, "NC")[0] + 0.25, _a(relay, "NC")[1] + 0.1),
+                        net="NOTE", fontsize=style.FS_PIN)
 
-        # Q1: logic-level N-MOSFET, low side. drain = PUMP-, source = star, gate = R1
-        q1 = elm.NFet().at((X_Q1, Y_PUMPM)).theta(0).reverse().color(black)
-        d += q1
-        d += style.note("D", (X_Q1 + 0.12, Y_PUMPM + 0.4), fontsize=style.FS_PIN)
-        d += style.note("S", (X_Q1 + 0.12, Y_PUMPM - 1.2), fontsize=style.FS_PIN)
-        d += style.note("G", (X_Q1 - 1.3, Y_PUMPM - 0.4), fontsize=style.FS_PIN)
-        d += style.note("Q1", (X_Q1 + 0.35, Y_PUMPM - 0.5), fontsize=style.FS_BODY, net="GND")
+        # ------------------------------------------------ the pump and its return
+        pump = style.block_at("PUMP  12 V diaphragm\nASSUME ≤ 1.5 A running,\n3-5x inrush (read the label)",
+                              [("+", "left", 1.8), ("-", "left", 0.8)], PUMP_SIZE,
+                              pinspacing=1.0).at(PUMP)
+        d += pump
+        d += style.wire(_a(relay, "NO"), _a(pump, "+"), "PUMP_SW", "-",
+                        label="switched 12 V", loc="top")
+        minus = _a(pump, "-")
+        _route(d, [minus, (PUMP[0] + PUMP_SIZE[0] + 1.2, minus[1]),
+                   (PUMP[0] + PUMP_SIZE[0] + 1.2, Y_RET), (X_RET, Y_RET), (X_RET, Y_STAR),
+                   star_end], "GND")
+        d += style.dot(star_end, "GND")
+        d += style.note("the pump's 12 V return: brick → F1 → COM → NO → pump → star, "
+                        "and never through a board pin",
+                        (X_RET + 0.3, Y_RET - 0.15), net="GND", fontsize=style.FS_PIN)
 
-        # PUMP- row: drain -> D1 anode node -> PUMP- terminal (switched return, not GND)
-        d += style.line("right", X_D1 - X_Q1, "PUMP_SW").at((X_Q1, Y_PUMPM))
-        _dot(d, (X_D1, Y_PUMPM), "PUMP_SW")
-        d += style.line("right", X_R - X_D1, "PUMP_SW").at((X_D1, Y_PUMPM))
-        _terminal(d, (X_R, Y_PUMPM), "PUMP-", "right", ">= 0.5 mm2", "PUMP_SW", ext_len=EXT_R,
-                  below="switched return\nvia Q1, NOT GND")
+        # ------------------------------------------------ the logic side
+        uno = style.block_at("Arduino UNO R4 WiFi", [("D6", "top", 2.3), ("D5", "left", 1.1)],
+                             UNO_SIZE).at(UNO)
+        d += uno
+        rails = style.block_at("breadboard rails", [("+5V", "top", 1.4), ("GND", "top", 3.4)],
+                               RAILS_SIZE, pinspacing=2.0).at(RAILS)
+        d += rails
+        hall = style.block_at("float hall (WPSE313)\n+ to 5V_BOARD, - to GND",
+                              [("S", "right", 1.1)], HALL_SIZE).at(HALL)
+        d += hall
 
-        # source -> star
-        d += style.line("down", (Y_PUMPM - 1.5) - Y_STAR, "GND").at((X_Q1, Y_PUMPM - 1.5))
-        d += elm.Dot(radius=0.16).at((X_Q1, Y_STAR)).color(black)
-        d += style.note("GND star", (X_Q1 - 0.4, Y_STAR - 0.2), net="GND", halign="right")
-        d += style.line("right", X_R - X_Q1, "GND").at((X_Q1, Y_STAR))
-        _terminal(d, (X_R, Y_STAR), "GND", "right", "star: brick 12V-, UNO GND,", "GND", ext_len=1.4,
-                  below="UBEC IN- and OUT-, servo brown,\nbreadboard GND rail\n(12 V returns >= 0.5 mm2)")
+        # D6 -> IN, with R1 holding the OFF level
+        d6, inp = _a(uno, "D6"), _a(relay, "IN")
+        y_en = 5.4
+        _route(d, [d6, (d6[0], y_en), (inp[0], y_en), inp], "SIGNAL", label="PUMP_EN", loc="bottom")
+        d += style.dot((12.6, y_en), "SIGNAL")
+        d += elm.Resistor().at((12.6, y_en)).down(1.6).color(style.colour("SIGNAL")).label(
+            f"R1 {_PART['R1']['value']}", loc="bottom", fontsize=style.FS_PIN,
+            color=style.colour("SIGNAL"), halign="right")
+        d += style.dot((12.6, y_en - 1.6), "SIGNAL", open_=True)
+        d += style.note("to the module's OFF level (see below)", (12.85, y_en - 1.72),
+                        net="SIGNAL", fontsize=style.FS_PIN)
 
-        # gate node: R1 from G3 arrives here, R2 pull-down to GND
-        node_g = q1.gate.x - 0.35
-        d += style.line("right", 0.35, "SIGNAL").at((node_g, Y_G23))
-        _dot(d, (node_g, Y_G23), "SIGNAL")
-        d += elm.Resistor().at((node_g, Y_G23)).down(1.5).color(black).label(
-            f"R2 {_PART['R2']['value']}\npull-down", loc="bottom", fontsize=style.FS_PIN,
-            color=black, halign="left")
-        _gnd(d, (node_g, Y_G23 - 1.5))
+        # coil supply
+        _route(d, [_a(rails, "+5V"), (_a(rails, "+5V")[0], 4.6), (_a(relay, "VCC")[0], 4.6),
+                   _a(relay, "VCC")], "5V_BOARD", label="coil ~80 mA", loc="bottom")
+        _route(d, [_a(rails, "GND"), (_a(rails, "GND")[0], 5.2), (_a(relay, "GND")[0], 5.2),
+                   _a(relay, "GND")], "GND")
 
-        # ------------------------------------------------ the 74HC00 interlock
-        g3 = _gate((X_G3, Y_G23), "G3")
-        d += g3
-        d += elm.Resistor().at(g3.out).to((node_g, Y_G23)).color(blue).label(
-            f"R1 {_PART['R1']['value']}", loc="top", fontsize=style.FS_BODY, color=blue)
-
-        g2 = _gate((X_G2, Y_G23), "G2")
-        d += g2
-        d += style.line("right", 0.35, "SIGNAL").at(g2.out)
-        _tie(d, g2.out.x + 0.35, g3)
-
-        # PUMP_EN from D6 -> G2 in1, R3 pull-down
-        _terminal(d, (X_L, Y_EN), _TERM["PUMP_EN"]["terminal"], "left", "PUMP_EN  ← UNO D6", "SIGNAL")
-        d += style.line("right", g2.in1.x - X_L, "SIGNAL").at((X_L, Y_EN))
-        d += style.note("R3: LOW at reset / boot / floating", (X_R3 + 0.4, Y_EN + 0.4), net="SIGNAL",
-                        fontsize=style.FS_PIN)
-        _dot(d, (X_R3, Y_EN), "SIGNAL")
-        d += elm.Resistor().at((X_R3, Y_EN)).down(1.1).color(black).label(
-            f"R3 {_PART['R3']['value']}\npull-down", loc="bottom", fontsize=style.FS_PIN,
-            color=black, halign="left")
-        _gnd(d, (X_R3, Y_EN - 1.1))
-
-        # G1: inverter on the float line; out = FLOAT_OK -> G2 in2 and D5
-        g1 = _gate((X_G1, Y_FLT), "G1")
-        d += g1
-        _terminal(d, (X_L, Y_FLT), _TERM["FLT_S"]["terminal"], "left", "float hall S", "SIGNAL",
-                  below="LOW = magnet at hall = allow\nHIGH = block")
-        d += style.line("right", (X_G1 - 0.5) - X_L, "SIGNAL").at((X_L, Y_FLT))
-        _dot(d, (X_R4, Y_FLT), "SIGNAL")
-        _tie(d, X_G1 - 0.5, g1)
-
-        # R4 100 k pull-up from FLT_S to 5V_BOARD: unplugged = HIGH = block
-        d += elm.Resistor().at((X_R4, Y_FLT)).down(Y_FLT - Y_RAIL).color(orange).label(
-            f"R4 {_PART['R4']['value']}\npull-up", loc="bottom", fontsize=style.FS_PIN,
-            color=orange, halign="left")
-
-        # FLOAT_OK node: G1 out -> up to G2 in2, down to the D5 terminal
-        fx = g1.out.x + 0.35
-        d += style.line("right", 0.35, "SIGNAL").at(g1.out)
-        _dot(d, (fx, Y_FLT), "SIGNAL")
-        d += style.line("up", g2.in2.y - Y_FLT, "SIGNAL").at((fx, Y_FLT))
-        d += style.line("right", g2.in2.x - fx, "SIGNAL").at((fx, g2.in2.y))
-        d += style.line("down", Y_FLT - Y_FOK, "SIGNAL").at((fx, Y_FLT))
-        d += style.note("FLOAT_OK", (fx + 0.15, Y_FLT + 0.36), net="SIGNAL")
-        d += style.line("left", fx - X_L, "SIGNAL").at((fx, Y_FOK))
-        d += style.note("G1 out; HIGH = allow", (X_R4 + 0.3, Y_FOK + 0.4), net="SIGNAL", fontsize=style.FS_PIN)
-        _terminal(d, (X_L, Y_FOK), _TERM["FLOAT_OK"]["terminal"], "left", "FLOAT_OK  → UNO D5", "SIGNAL")
-
-        # G4: unused, inputs to GND, output open
-        g4 = _gate((X_G3, 5.3), "G4")
-        d += g4
-        d += style.line("left", 0.4, "GND").at(g4.in1)
-        d += style.line("left", 0.4, "GND").at(g4.in2)
-        d += style.line("down", g4.in1.y - g4.in2.y, "GND").at((g4.in1.x - 0.4, g4.in1.y))
-        _gnd(d, (g4.in1.x - 0.4, g4.in2.y))
-        d += style.note("inputs to GND\nout n/c", (g4.out.x + 0.2, 5.6), net="SIGNAL", fontsize=style.FS_PIN)
-
-        # ------------------------------------------------ 5V_BOARD rail, C1, float plug + / -
-        x_c1 = X_G1 + 0.6
-        _terminal(d, (X_L, Y_RAIL), _TERM["5V_BOARD"]["terminal"], "left", "5V_BOARD  ← UNO 5 V pin",
-                  "5V_BOARD", name_below=True)
-        d += style.line("right", x_c1 - X_L, "5V_BOARD").at((X_L, Y_RAIL))
-        _dot(d, (X_R3, Y_RAIL), "5V_BOARD")
-        _dot(d, (X_R4, Y_RAIL), "5V_BOARD")
-        d += elm.Capacitor().at((x_c1, Y_RAIL)).down(0.9).color(black).label(
-            f"C1 {_PART['C1']['value']}\npins 14-7", loc="bottom", fontsize=style.FS_PIN,
-            color=black, halign="left")
-        _gnd(d, (x_c1, Y_RAIL - 0.9))
-        d += style.note("U1 pin 14 (VCC)", (X_R4 + 0.3, Y_RAIL + 0.42), net="5V_BOARD", fontsize=style.FS_PIN)
-
-        _terminal(d, (X_L, Y_FLTP), _TERM["FLT_+"]["terminal"], "left", "float hall + (middle pin)", "5V_BOARD")
-        d += style.line("right", X_R3 - X_L, "5V_BOARD").at((X_L, Y_FLTP))
-        d += style.line("down", Y_FLTP - Y_RAIL, "5V_BOARD").at((X_R3, Y_FLTP))
-        _terminal(d, (X_L, Y_FLTM), _TERM["FLT_-"]["terminal"], "left", "float hall -", "GND")
-        d += style.line("right", 0.6, "GND").at((X_L, Y_FLTM))
-        _gnd(d, (X_L + 0.6, Y_FLTM))
+        # float hall -> D5, with R2 pulling an open line to "not OK"
+        s, d5 = _a(hall, "S"), _a(uno, "D5")
+        d += style.wire(s, d5, "SIGNAL", "-", label="float sense: straight to D5, through no gate",
+                        loc="top")
+        d += style.dot((10.0, s[1]), "SIGNAL")
+        d += elm.Resistor().at((10.0, s[1])).up(1.6).color(style.colour("5V_BOARD")).label(
+            f"R2 {_PART['R2']['value']}", loc="top", fontsize=style.FS_PIN,
+            color=style.colour("5V_BOARD"), halign="right")
+        d += style.line("up", 0.4, "5V_BOARD").at((10.0, s[1] + 1.6))
+        d += style.dot((10.0, s[1] + 2.0), "5V_BOARD", open_=True)
+        d += style.note("5V_BOARD rail: an open, dead\nor unplugged hall reads 'not OK'",
+                        (10.4, s[1] + 1.95), net="5V_BOARD", fontsize=style.FS_PIN, halign="right")
 
         # ------------------------------------------------ notes
+        d += style.note([f"- {n}" for n in nets.RELAY_NOTES[:4]], (13.5, Y_FT + 2.2),
+                        fontsize=style.FS_PIN)
         d += style.note([
-            "U1 74HC00 quad NAND, DIP-14",
-            "pin 14 VCC = 5V_BOARD (C1), pin 7 GND = star",
-            "every ground symbol on this board = the star",
-        ], (X_G2 + 0.6, 3.4))
+            "R1 pulls D6 to whichever level leaves the relay OFF: to GND if the module's IN is active-HIGH, to",
+            "5V_BOARD if it is active-LOW. It is what holds the pump off while D6 is still an input - at reset,",
+            "during boot, and with the jumper pulled - so its direction is decided by reading the module, not guessed.",
+        ], (X_RET, Y_RET - 1.1), net="SIGNAL", fontsize=style.FS_PIN)
         d += style.note([
-            "Q1: logic-level N-MOSFET module, low side.",
-            "AO3400 / IRLZ44N / D4184 ok; an IRF520 is",
-            "NOT logic level at 5 V. Module terminals:",
-            "G ← R1, D = PUMP-, S = star. Meter: own",
-            "gate pull-down? R2 is fitted regardless.",
-            "Relay module instead: H/L jumper to H, or",
-            "an NPN inverter, so logic LOW = relay off.",
-        ], (X_R + 0.3, 7.2), fontsize=style.FS_PIN)
-
-        # pump, outside the perfboard
-        d += elm.Rect(corner1=(X_R + EXT_R + 0.15, Y_PUMPM - 0.7), corner2=(X_R + EXT_R + 4.0, Y_12V + 0.7),
-                      lw=1.2).at((0, 0)).theta(0).color(style.colour("NOTE"))
-        d += style.note(["PUMP  12 V diaphragm", "ASSUME ≤ 1.5 A running,", "3-5x inrush", "(read the label)"],
-                        (X_R + EXT_R + 0.35, Y_12V + 0.5), fontsize=style.FS_PIN)
-
-        # interlock summary under the frame
-        d += style.note([
-            "Runs ONLY when PUMP_EN is HIGH AND the magnet is at the float hall (FLT_S LOW) AND the hall is plugged",
-            "and powered AND 5V_BOARD is up (U1 powered). MCU in reset / boot, D6 floating or the jumper pulled,",
-            "float unplugged, its GND or VCC lead off, no magnet, tank lifted, board 5 V gone: pump OFF. Fails dry.",
-        ], (X_L + 2.2, -0.3), fontsize=style.FS_PIN)
-        style.legend(d, (X_L - EXT - 0.1, -0.4), ("12V", "PUMP_SW", "5V_BOARD", "GND", "SIGNAL"))
+            "THE GAP: no hardware AND any more. A sketch that hangs with D6 asserted keeps the pump running.",
+            "Bounded only by firmware: the IWDT enabled, a hard maximum run time beside the line that asserts D6,",
+            "and a no-flow abort from the meter. Plan item 4 puts a 74HC00 back between D6, the float and IN.",
+        ], (X_RET, Y_RET - 2.3), net="PUMP_SW", fontsize=style.FS_PIN)
+        style.legend(d, (X_RET, Y_RET - 3.6), ("12V", "PUMP_SW", "5V_BOARD", "GND", "SIGNAL"))
 
         d += style.title(d, TITLE)
         return style.save(d, STEM)

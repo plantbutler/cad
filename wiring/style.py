@@ -22,7 +22,7 @@ from schemdraw import elements as elm  # noqa: E402
 
 schemdraw.use("matplotlib")
 
-DATE = "2026-09-02"
+DATE = "2026-09-03"
 HERE = Path(__file__).resolve().parent
 
 # ---------------------------------------------------------------- colours
@@ -30,11 +30,10 @@ HERE = Path(__file__).resolve().parent
 COLOURS: dict[str, str] = {
     "12V": "#d62728",  # red      12 V brick rail
     "5V_BOARD": "#ff7f0e",  # orange   UNO 5 V pin -> sensors and logic
-    "5V_SERVO": "#8c564b",  # brown    UBEC out -> servo red ONLY
     "GND": "#000000",  # black    one star point on the perfboard
     "SIGNAL": "#1f77b4",  # blue     every logic / analog signal
     "I2C": "#2ca02c",  # green    SDA / SCL
-    "PUMP_SW": "#9467bd",  # purple   pump switched return (MOSFET drain), NOT ground
+    "PUMP_SW": "#9467bd",  # purple   switched 12 V out of the relay, NOT ground
     "WATER": "#17becf",  # teal     hydraulic chain (tube), not a wire
     "NOTE": "#555555",  # grey     annotations, frames, later-expansion text
 }
@@ -258,7 +257,7 @@ def table_note(d, title: str, lines: Sequence[str], xy) -> float:
 
 
 def legend(d: schemdraw.Drawing, xy,
-           nets: Sequence[str] = ("12V", "5V_BOARD", "5V_SERVO", "GND", "SIGNAL", "I2C"),
+           nets: Sequence[str] = ("12V", "5V_BOARD", "GND", "SIGNAL", "I2C"),
            step: float = 0.45) -> None:
     """Colour key added to `d`: a short swatch per net, stacked downwards from xy (top-left).
 
