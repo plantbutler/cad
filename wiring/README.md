@@ -500,6 +500,14 @@ In this order, each step proving one thing. Steps 4a-4c exercise the relay dry, 
 | 7d | Measure pump start and dead-head current; fix the F1 value. | fuse value |
 | 7e | Flash the unattended binary: `status` says `build=bench` and `dry=0`, and none of `pump`, `cal`, `servo`, `home`, `goto` is a command (nor `hang` as a `pump` argument). Then start the 48-hour run. | the unattended binary is a different binary, with no console path to the pump or to the cart |
 
+## Running the bench
+
+Three things to know during the 48-hour run that `status` cannot tell you. They are requirements of the firmware spec (2.7, 2.9, 15.2), not advice, and the firmware's `AGENTS.md` carries the same three rules:
+
+- **A power cycle after a latch silently rearms the rig.** The dry latch and the contradiction latch live in the firmware's `.noinit`, which survives a warm reset and does not survive a power cycle or a brown-out. Pulling the plug on a latched rig and plugging it back in clears the latch and lets the next backend command water. Until the backend keeps the durable half of the latch, the only safe way to end a latched session is to leave it latched and read `status`.
+- **A `next` below about 60 s will visibly stutter while doses are live.** A dose blocks the board for up to 60 s and the network poll cannot run while it does, so a report interval shorter than a dose is an interval the board cannot keep. The reports are not lost; they are late, and the lateness is proportional to how much watering is happening.
+- **After any power event, look for gaps in `readings`.** The boot salt covers a watchdog reset and the RESET button, not a brown-out or a power-cycle loop - those clear SRAM, so the boot counter restarts and two boots can collide on `(controller, t)` inside the backend's 300 s dedup window, which shows up as a missing row rather than as an error anywhere.
+
 ## Regenerate
 
 ```bash

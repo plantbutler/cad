@@ -645,6 +645,25 @@ BRINGUP: list[dict[str, str]] = [
      "proves": "the unattended binary is a different binary, with no console path to the pump or to the cart"},
 ]
 
+# Three things the person at the bench needs to know during the 48-hour run and cannot read
+# off `status`. Requirements of the firmware spec (2.7, 2.9, 15.2), not advice; the same three
+# rules are in firmware/AGENTS.md under "Running the bench", worded there for the code and here for the bench.
+RUNNING_NOTES = [
+    "**A power cycle after a latch silently rearms the rig.** The dry latch and the contradiction "
+    "latch live in the firmware's `.noinit`, which survives a warm reset and does not survive a power "
+    "cycle or a brown-out. Pulling the plug on a latched rig and plugging it back in clears the latch "
+    "and lets the next backend command water. Until the backend keeps the durable half of the latch, "
+    "the only safe way to end a latched session is to leave it latched and read `status`.",
+    "**A `next` below about 60 s will visibly stutter while doses are live.** A dose blocks the board "
+    "for up to 60 s and the network poll cannot run while it does, so a report interval shorter than "
+    "a dose is an interval the board cannot keep. The reports are not lost; they are late, and the "
+    "lateness is proportional to how much watering is happening.",
+    "**After any power event, look for gaps in `readings`.** The boot salt covers a watchdog reset "
+    "and the RESET button, not a brown-out or a power-cycle loop - those clear SRAM, so the boot "
+    "counter restarts and two boots can collide on `(controller, t)` inside the backend's 300 s "
+    "dedup window, which shows up as a missing row rather than as an error anywhere.",
+]
+
 
 # ---------------------------------------------------------------- rendering
 def md_table(rows: Sequence[Any], columns: Sequence[tuple[str, str]] | None = None) -> str:
@@ -725,6 +744,9 @@ def _check() -> None:
     no = [w for w in WIRES if w.frm == "RELAY" and w.frm_pin == "NO"]
     assert len(no) == 1 and no[0].to == "PUMP", "the pump hangs off NO, never NC"
     assert not [w for w in WIRES if w.frm == "PUMP" and w.to == "UNO"], "the pump return goes to the star"
+    # The running notes are the three sentences the firmware's AGENTS.md carries, no more, no fewer:
+    # a fourth belongs there first, and one that stops opening with its rule is no longer a rule.
+    assert len(RUNNING_NOTES) == 3 and all(n.startswith("**") for n in RUNNING_NOTES), RUNNING_NOTES
 
 
 _check()
