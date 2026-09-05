@@ -245,6 +245,13 @@ def render() -> str:
     add(nets.BRINGUP_NOTE + "\n")
     add(md_table(nets.BRINGUP, [("step", "step"), ("do", "do"), ("proves", "proves")]) + "\n")
 
+    # -- running
+    add("## Running the bench\n")
+    add("Three things to know during the 48-hour run that `status` cannot tell you. They are "
+        "requirements of the firmware spec (2.7, 2.9, 15.2), not advice, and the firmware's "
+        "`AGENTS.md` carries the same three rules:\n")
+    add(md_list(nets.RUNNING_NOTES) + "\n")
+
     # -- regenerate
     add("## Regenerate\n")
     add("```bash\nmake -C cad/wiring            # drawings (SVG + PNG at 150 dpi) and this README\n"

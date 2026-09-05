@@ -468,12 +468,14 @@ The bench firmware is a separate deliverable under the plan pitches "Pump on com
 | `clear contra` | bench + bring-up | release the contradiction latch: the only way back after 'float says OK, the meter saw nothing' |
 | `status` | bench + bring-up | pins, counts, uptime, last error (`last=`), which binary is running (`build=`), `dry=`, `contra=`, the compiled pump ON/OFF level, and whether the WDT is enabled, the window it was granted and whether its counter is moving |
 | `stop` | bench + bring-up | cuts a dose in progress |
-| `dry on\|off` | bench + bring-up | latch: while it is on, every dose is refused (`dry on` also cuts a dose in progress). It is the only way back from a latch, and a reset taken mid-dose sets one by itself: bring-up 4a, 4b, 4c and 7c all need a `dry off` after them |
+| `dry on\|off` | bench + bring-up | latch: while it is on, every dose is refused (`dry on` also cuts a dose in progress). It is the only way back from a latch, and a reset taken mid-dose sets one by itself: bring-up 4a, 4b and 7c all need a `dry off` after them (4c pulls a jumper, not the reset line, and does not latch) |
 | `help` | bench + bring-up | one screen: the commands this binary has |
-| `servo <+-us> <ms>` | bring-up only | bounded: pulse offset for <= cap ms, then stop |
+| `servo <1000-2000> <ms>` | bring-up only | bounded: drive the servo at that pulse width (us, absolute, no sign) for <= cap ms, then stop |
 | `home` | bring-up only | run toward home until HALL_HOME, bounded time, zero the count |
 | `goto <1-5>` | bring-up only | step to the outlet counting screw pulses, bounded |
 | `pump <ms> [prime] [hang]` | bring-up only | assert D6 for <= cap ms; refused when the float reads 'not OK'; aborts on no flow within the timeout; the cap lives in the same code path that asserts D6. 'prime' extends the no-flow window and caps the dose at 20 s - it removes no abort. 'hang' starves the watchdog (7c) |
+| `calib` | bring-up only | one fixed 10 s primed dose into a measuring jug, for 7b: read the jug, divide the pulse total by the litres, and hand the number to `cal` |
+| `noinit pattern` | bring-up only | write a known pattern into the .noinit block, then force a watchdog reset (7c') and read it back in `status`: proves the latches survive the reset the way the code claims |
 | `cal <pulses per litre>` | bring-up only | set the meter calibration at runtime, bounded to a sane range; 7b's number |
 
 ## Bring-up order
@@ -499,6 +501,14 @@ In this order, each step proving one thing. Steps 4a-4c exercise the relay dry, 
 | 7c | RESET mid-dose -> stops; `status` says `dry=1` and `last=resetmid`. `dry off`, then force a hang (`pump <ms> hang`) -> the WDT must reset the board and drop the pump inside its window; after that reset `status` must again say `dry=1` and `last=resetmid`. `dry off` before 7d. | the watchdog, now the ONLY thing between a hung sketch and a running pump, and that the latch survives a warm reset |
 | 7d | Measure pump start and dead-head current; fix the F1 value. | fuse value |
 | 7e | Flash the unattended binary: `status` says `build=bench` and `dry=0`, and none of `pump`, `cal`, `servo`, `home`, `goto` is a command (nor `hang` as a `pump` argument). Then start the 48-hour run. | the unattended binary is a different binary, with no console path to the pump or to the cart |
+
+## Running the bench
+
+Three things to know during the 48-hour run that `status` cannot tell you. They are requirements of the firmware spec (2.7, 2.9, 15.2), not advice, and the firmware's `AGENTS.md` carries the same three rules:
+
+- **A power cycle after a latch silently rearms the rig.** The dry latch and the contradiction latch live in the firmware's `.noinit`, which survives a warm reset and does not survive a power cycle or a brown-out. Pulling the plug on a latched rig and plugging it back in clears the latch and lets the next backend command water. Until the backend keeps the durable half of the latch, the only safe way to end a latched session is to leave it latched and read `status`.
+- **A `next` below about 60 s will visibly stutter while doses are live.** A dose blocks the board for up to 60 s and the network poll cannot run while it does, so a report interval shorter than a dose is an interval the board cannot keep. The reports are not lost; they are late, and the lateness is proportional to how much watering is happening.
+- **After any power event, look for gaps in `readings`.** The boot salt covers a watchdog reset and the RESET button, not a brown-out or a power-cycle loop - those clear SRAM, so the boot counter restarts and two boots can collide on `(controller, t)` inside the backend's 300 s dedup window, which shows up as a missing row rather than as an error anywhere.
 
 ## Regenerate
 
