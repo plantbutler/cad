@@ -591,15 +591,23 @@ BENCH_COMMANDS: list[dict[str, str]] = [
     {"command": "dry on|off", "binary": _BOTH,
      "does": "latch: while it is on, every dose is refused (`dry on` also cuts a dose in progress). It is "
              "the only way back from a latch, and a reset taken mid-dose sets one by itself: bring-up 4a, "
-             "4b, 4c and 7c all need a `dry off` after them"},
+             "4b and 7c all need a `dry off` after them (4c pulls a jumper, not the reset line, and "
+             "does not latch)"},
     {"command": "help", "binary": _BOTH, "does": "one screen: the commands this binary has"},
-    {"command": "servo <+-us> <ms>", "binary": _BRINGUP, "does": "bounded: pulse offset for <= cap ms, then stop"},
+    {"command": "servo <1000-2000> <ms>", "binary": _BRINGUP,
+     "does": "bounded: drive the servo at that pulse width (us, absolute, no sign) for <= cap ms, then stop"},
     {"command": "home", "binary": _BRINGUP, "does": "run toward home until HALL_HOME, bounded time, zero the count"},
     {"command": "goto <1-5>", "binary": _BRINGUP, "does": "step to the outlet counting screw pulses, bounded"},
     {"command": "pump <ms> [prime] [hang]", "binary": _BRINGUP,
      "does": "assert D6 for <= cap ms; refused when the float reads 'not OK'; aborts on no flow within the "
              "timeout; the cap lives in the same code path that asserts D6. 'prime' extends the no-flow "
              "window and caps the dose at 20 s - it removes no abort. 'hang' starves the watchdog (7c)"},
+    {"command": "calib", "binary": _BRINGUP,
+     "does": "one fixed 10 s primed dose into a measuring jug, for 7b: read the jug, divide the pulse "
+             "total by the litres, and hand the number to `cal`"},
+    {"command": "noinit pattern", "binary": _BRINGUP,
+     "does": "write a known pattern into the .noinit block, then force a watchdog reset (7c') and read "
+             "it back in `status`: proves the latches survive the reset the way the code claims"},
     {"command": "cal <pulses per litre>", "binary": _BRINGUP,
      "does": "set the meter calibration at runtime, bounded to a sane range; 7b's number"},
 ]

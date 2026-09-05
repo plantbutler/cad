@@ -468,12 +468,14 @@ The bench firmware is a separate deliverable under the plan pitches "Pump on com
 | `clear contra` | bench + bring-up | release the contradiction latch: the only way back after 'float says OK, the meter saw nothing' |
 | `status` | bench + bring-up | pins, counts, uptime, last error (`last=`), which binary is running (`build=`), `dry=`, `contra=`, the compiled pump ON/OFF level, and whether the WDT is enabled, the window it was granted and whether its counter is moving |
 | `stop` | bench + bring-up | cuts a dose in progress |
-| `dry on\|off` | bench + bring-up | latch: while it is on, every dose is refused (`dry on` also cuts a dose in progress). It is the only way back from a latch, and a reset taken mid-dose sets one by itself: bring-up 4a, 4b, 4c and 7c all need a `dry off` after them |
+| `dry on\|off` | bench + bring-up | latch: while it is on, every dose is refused (`dry on` also cuts a dose in progress). It is the only way back from a latch, and a reset taken mid-dose sets one by itself: bring-up 4a, 4b and 7c all need a `dry off` after them (4c pulls a jumper, not the reset line, and does not latch) |
 | `help` | bench + bring-up | one screen: the commands this binary has |
-| `servo <+-us> <ms>` | bring-up only | bounded: pulse offset for <= cap ms, then stop |
+| `servo <1000-2000> <ms>` | bring-up only | bounded: drive the servo at that pulse width (us, absolute, no sign) for <= cap ms, then stop |
 | `home` | bring-up only | run toward home until HALL_HOME, bounded time, zero the count |
 | `goto <1-5>` | bring-up only | step to the outlet counting screw pulses, bounded |
 | `pump <ms> [prime] [hang]` | bring-up only | assert D6 for <= cap ms; refused when the float reads 'not OK'; aborts on no flow within the timeout; the cap lives in the same code path that asserts D6. 'prime' extends the no-flow window and caps the dose at 20 s - it removes no abort. 'hang' starves the watchdog (7c) |
+| `calib` | bring-up only | one fixed 10 s primed dose into a measuring jug, for 7b: read the jug, divide the pulse total by the litres, and hand the number to `cal` |
+| `noinit pattern` | bring-up only | write a known pattern into the .noinit block, then force a watchdog reset (7c') and read it back in `status`: proves the latches survive the reset the way the code claims |
 | `cal <pulses per litre>` | bring-up only | set the meter calibration at runtime, bounded to a sane range; 7b's number |
 
 ## Bring-up order
