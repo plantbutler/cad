@@ -322,7 +322,7 @@ Read the last column. Rows marked *hardware* hold whatever the sketch does; rows
 - The watchdog that is written is the WDT, register-started and PCLKB-clocked, not the IWDT that DECISIONS #10 names: the IWDT auto-starts from OFS0 option bytes the Arduino core does not expose, and a wrong one locks the board out of uploads. Firmware spec 2.5 has the granted window; status prints it.
 - A fifth case the hardware cannot see: the float grants permission and the meter counts nothing. The two sensors contradict each other, the safe reading is a stuck float over an empty tank, and the firmware latches - every later dose refused until someone types `clear contra`.
 - The float is mounted so that ALLOW is the active state (magnet present). Every sensor failure - an open line, a dead hall, an unplugged connector, a lost 5 V - therefore reads as refuse, never as permission.
-- A float input that never changes state across a refill is presumed dead: refuse, do not assume OK.
+- A float that still says full after more water than the tank holds has been pumped since the last refill is presumed stuck: refuse and page. A float still saying empty minutes after a refill is presumed dead: page (the rules are dry on empty already). The tank's size is what the meter counted between a refill and the float going empty, the median of the last five runs, armed after two.
 - Plan item 4 ('Don't flood the flat') puts a hardware interlock back when the parts are in hand: a 74HC00 (or a 74HC08 plus an inverter) between D6, the float and the relay's IN.
 
 ### Where the float sits, and why it decides the failure direction
